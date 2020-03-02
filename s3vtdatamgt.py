@@ -193,7 +193,7 @@ if __name__ == '__main__':
             responselist = [] 
         
             # Determine number of records to retrieve
-            get_file_list(configuration.username, configuration.password, configuration.aoi, str(startrecord))
+            get_file_list(configuration['username'], configuration['password'], configuration['aoi'], str(startrecord))
             with open('filelist.txt') as results:
                 for i in results: 
                     response = json.loads(i)
