@@ -202,7 +202,7 @@ if __name__ == '__main__':
             upperlimit = int(response['feed']['opensearch:totalResults'])
             
             ##### Below for testing only #####
-            upperlimit = 200
+            #upperlimit = 200
             ##################################
             
             # Get the full list of records
@@ -227,12 +227,12 @@ if __name__ == '__main__':
         s3bucket = s3.Bucket(configuration['awss3bucket'])
         
         for bucket_object in s3bucket.objects.all():
-            s3bucketobject = str(bucket_object.key).split("/")[1]
+            s3bucketobject = str(bucket_object.key).split("/")[2]
             if '.SEN3' in s3bucketobject:
                 s3folderlist.append(s3bucketobject)
             if '.FRP.geojson' in s3bucketobject:
                 s3geojsonlist.append(s3bucketobject)
-            logger.info(str(bucket_object.key).split("/")[1])                       
+            logger.info(str(bucket_object.key).split("/")[2])                       
 
         # Read inventory to geopandas - write to geojson       
                 
@@ -293,9 +293,9 @@ if __name__ == '__main__':
                 #s3vthostpotsgpdlist.append(s3hotspotsgpd)
                 
         # Uncomment this when running all #        
-        #for i in range(dataframelength):
+        for i in range(dataframelength):
         
-        for i in range(13):
+            #for i in range(1):
             if s3vtgpd.loc[i]['download'] == 0:
                 zipname = s3vtgpd.loc[i]['title']+'.zip'
                 uuid = s3vtgpd.loc[i]['id']
@@ -317,9 +317,11 @@ if __name__ == '__main__':
                         s3vtgpd.at[i, 'hotspot'] = 0
                 
                 # Assumes AWScli configured
+                folderdate = s3vtgpd.loc[i]['date'].strftime("%Y-%m-%d")
+                
                 try:
-                    subprocess.call(['aws', 's3', 'cp', s3vtgpd.loc[i]['title']+'.SEN3/', 's3://s3vtaustralia/data/'+s3vtgpd.loc[i]['title']+'.SEN3/', '--recursive'])
-                    subprocess.call(['aws', 's3', 'cp', s3vtgpd.loc[i]['title']+'.FRP.geojson', 's3://s3vtaustralia/data/'])
+                    subprocess.call(['aws', 's3', 'cp', s3vtgpd.loc[i]['title']+'.SEN3/', 's3://s3vtaustralia/data/'+folderdate+'/'+s3vtgpd.loc[i]['title']+'.SEN3/', '--recursive'])
+                    subprocess.call(['aws', 's3', 'cp', s3vtgpd.loc[i]['title']+'.FRP.geojson', 's3://s3vtaustralia/data/'+folderdate+'/'])
                 except:
                     logger.info("Upload failed "+s3vtgpd.loc[i]['title'])
                 else:
