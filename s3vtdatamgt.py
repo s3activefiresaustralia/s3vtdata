@@ -76,7 +76,11 @@ def get_file(username, password, uuid, zipname):
 def get_polygon_from_gml(gml_dict):
     listoftuples = []
     for i in list(gml_dict.split(" ")):
-        pair = (float(i.split(',')[1]), float(i.split(',')[0]))
+        x = float(i.split(',')[1]) 
+        if x <= 30.0:
+            x = x + 360.0
+            
+        pair = (x, float(i.split(',')[0]))
         listoftuples.append(pair)
     return(listoftuples)
 
@@ -202,7 +206,7 @@ if __name__ == '__main__':
             upperlimit = int(response['feed']['opensearch:totalResults'])
             
             ##### Below for testing only #####
-            #upperlimit = 200
+            upperlimit = 200
             ##################################
             
             # Get the full list of records
