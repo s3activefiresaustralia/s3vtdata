@@ -206,7 +206,7 @@ if __name__ == '__main__':
             upperlimit = int(response['feed']['opensearch:totalResults'])
             
             ##### Below for testing only #####
-            upperlimit = 200
+            #upperlimit = 200
             ##################################
             
             # Get the full list of records
@@ -246,29 +246,33 @@ if __name__ == '__main__':
                 pages = json.loads(p)
                         
                 for page in pages:
-                    for entry in page['feed']['entry']:
-                                
-                        df = pd.DataFrame.from_dict(entry, orient='index')
-                                
-                        polygon = get_polygon_from_gml(xmltodict.parse(entry['str'][2]['content'])['gml:Polygon']['gml:outerBoundaryIs']['gml:LinearRing']['gml:coordinates'])
-                        
-                        df = df.transpose()
-                        df['Coordinates'] = Polygon(polygon)
-                        for d in entry['str']:
-                            if d['name'] ==  'orbitdirection':
-                                df['orbitdirection'] = d['content']
-                            if d['name'] ==  'platformidentifier':
-                                df['platformidentifier'] = d['content'] 
-                            if d['name'] ==  'filename':
-                                df['filename'] = d['content']
-                            if d['name'] ==  'instrumentshortname':
-                                df['instrumentshortname'] = d['content']
-                            if d['name'] ==  'passnumber':
-                                df['passnumber'] = d['content']        
-                        s3vtdf = gpd.GeoDataFrame(df, geometry='Coordinates')
-                        
-                        frames.append(s3vtdf) 
+                    #Check page has the required structure
+                    #if str(page['feed'].keys()) == "dict_keys(['xmlns', 'xmlns:opensearch', 'title', 'subtitle', 'updated', 'author', 'id', 'opensearch:totalResults', 'opensearch:startIndex', 'opensearch:itemsPerPage', 'opensearch:Query', 'link'])":
+                    try:
+                        for entry in page['feed']['entry']:
                             
+                            df = pd.DataFrame.from_dict(entry, orient='index')
+                                    
+                            polygon = get_polygon_from_gml(xmltodict.parse(entry['str'][2]['content'])['gml:Polygon']['gml:outerBoundaryIs']['gml:LinearRing']['gml:coordinates'])
+                            
+                            df = df.transpose()
+                            df['Coordinates'] = Polygon(polygon)
+                            for d in entry['str']:
+                                if d['name'] ==  'orbitdirection':
+                                    df['orbitdirection'] = d['content']
+                                if d['name'] ==  'platformidentifier':
+                                    df['platformidentifier'] = d['content'] 
+                                if d['name'] ==  'filename':
+                                    df['filename'] = d['content']
+                                if d['name'] ==  'instrumentshortname':
+                                    df['instrumentshortname'] = d['content']
+                                if d['name'] ==  'passnumber':
+                                    df['passnumber'] = d['content']        
+                            s3vtdf = gpd.GeoDataFrame(df, geometry='Coordinates')
+                            
+                            frames.append(s3vtdf) 
+                    except KeyError:
+                        logger.info("KeyError exception for get_polygon_from_gml()")
         s3vtgpd = pd.concat(frames)
         
         # Not sure why we need to index but do it anyway
