@@ -1,0 +1,99 @@
+--- 
+missions: 
+  - 
+    description: "Aqua MODIS"
+    satellite: 
+      name: AQUA
+      tle: AQUA
+      addtoorbit: 1
+      sensor: 
+        name: MODIS
+        node: both
+        swath: 2330000
+  - 
+    description: "NOAA 19 AVHRR"
+    satellite: 
+      name: NOAA_19
+      tle: "NOAA 19"
+      addtoorbit: 100000
+      sensor: 
+        name: AVHRR
+        node: descending
+        swath: 1100000
+  - 
+    description: "NOAA 20 VIIRS"
+    satellite: 
+      name: NOAA_20
+      tle: "NOAA 20"
+      addtoorbit: 0
+      sensor: 
+        name: VIIRS
+        node: both
+        swath: 3000000
+  - 
+    description: "Suomi NPP VIIRS"
+    satellite: 
+      name: SUOMI_NPP
+      tle: "SUOMI NPP"
+      addtoorbit: 0
+      sensor: 
+        name: VIIRS
+        node: both
+        swath: 3000000
+  - 
+    description: "Sentinel 3A SLSTR"
+    satellite: 
+      name: Sentinel_3A
+      tle: "SENTINEL-3A"
+      addtoorbit: 0
+      sensor: 
+        name: SLSTR
+        node: both
+        swath: 1500000
+  - 
+    description: "Sentinel 3B SLSTR"
+    satellite: 
+      name: Sentinel_3B
+      tle: "SENTINEL-3B"
+      addtoorbit: 0
+      sensor: 
+        name: SLSTR
+        node: both
+        swath: 1500000
+  - 
+    description: "Terra MODIS"
+    satellite: 
+      name: TERRA
+      tle: TERRA
+      addtoorbit: 100000
+      sensor: 
+        name: MODIS
+        node: both
+        swath: 2330000
+outputs: 
+  cesium: false
+  folium: true
+  geojson: true
+  html: true
+  kml: true
+  output_path: 'output'
+  schedule_url_basename: https://satellite-footprint.s3-ap-southeast-2.amazonaws.com
+scenario: 
+  bbox: 
+    lllat: ~
+    lllon: ~
+    ullat: ~
+    ullon: ~
+  ground_station: [-23 46, 133 53] #133.88  -23.76
+  ground_station_name: AliceSprings
+  localtimezone: Australia/Sydney
+  loop: true
+  period: 1440
+  sleep_status: 0.05 # How many minutes to sleep between updates
+  start: 2020-01-17T13:00:00 #as datetime object
+  observer-horizon: '5:0'
+  timestep: 100 # 100 seconds between calculations
+tlefiles:
+  url:
+  - "https://celestrak.com/norad/elements/resource.txt"
+  - "https://celestrak.com/norad/elements/weather.txt"
