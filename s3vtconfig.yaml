@@ -19,7 +19,7 @@ missions:
       sensor: 
         name: AVHRR
         node: descending
-        swath: 1100000
+        swath: 3000000
   - 
     description: "NOAA 20 VIIRS"
     satellite: 
@@ -43,22 +43,22 @@ missions:
   - 
     description: "Sentinel 3A SLSTR"
     satellite: 
-      name: Sentinel_3A
+      name: S3A
       tle: "SENTINEL-3A"
       addtoorbit: 0
       sensor: 
         name: SLSTR
-        node: both
+        node: descending
         swath: 1500000
   - 
     description: "Sentinel 3B SLSTR"
     satellite: 
-      name: Sentinel_3B
+      name: S3B
       tle: "SENTINEL-3B"
       addtoorbit: 0
       sensor: 
         name: SLSTR
-        node: both
+        node: descending
         swath: 1500000
   - 
     description: "Terra MODIS"
