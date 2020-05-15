@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="initial-scale=1.0, user-scalable=yes" />
+<title>Daily Satellite Schedule</title>
+<meta name="keywords"
+	content="" />
+<meta name="description"
+	content="" />
+
+<link href="css/all_satpass.css" rel="stylesheet">
+<style type="text/css">
+
+
+
+/* -------Base Template ------ */
+
+
+html, body {font:11px Verdana,Arial; height:100%; margin: 0; padding: 0;}
+
+body {
+    margin-top:-42px;
+    margin-bottom:42px;
+
+overflow: hidden;
+}
+
+.container {
+   border:0px solid red; /* hack */
+}
+
+
+#top {
+top:42px;
+position:relative;
+width:100%;
+height:84px;
+margin-bottom: 0;
+display: block;
+
+}
+
+#top_content{
+position:relative;
+top:0px;
+left:0px;
+width:100%;
+height:84px;
+}
+
+
+
+
+#top_logo {
+position: absolute;
+width:250px;
+height:70px;
+left: 20px;
+top:0px;
+}
+
+.logo_img {
+height: 100%;
+width: 100%;
+object-fit: contain;
+}
+
+
+#top_title {
+position: absolute;
+width:450px;
+height:70px;
+left: 280px;
+top:0px;
+}
+
+
+.title_cont {
+    height:100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+
+#top_bar {
+position:relative;
+display:flex;
+top:70px;
+left:0px;
+width:100%;
+height:11px;
+border-bottom: 3px solid white;
+}
+
+
+#top_bar_left {
+postition:relative;
+flex: 0 0 88%;
+background-color: #72c7e7;
+height:11px;
+}
+
+
+#top_bar_right {
+postition:relative;
+flex: 1;
+background-color: #a33f1f;
+height:11px;
+border-left:3px solid white;
+}
+
+
+#second {
+position:relative;
+top:42px;
+width:100%;
+height:30px;
+margin-bottom: 0;
+background-color: #006983;
+}
+
+
+#selectors {
+position:relative;
+top:0px;
+left:0px;
+width:100%;
+height:30px;
+}
+
+
+.sel_cont {
+    height:100%;
+    display: flex;
+    align-items: center;
+    /*justify-content: center;*/
+}
+
+
+#sel1 {
+
+}
+
+
+#sel1 svg {
+cursor:pointer;
+width:20px;
+height:20px;
+color: white;
+padding-left:5px;
+}
+
+
+#sel3 svg {
+width:20px;
+height:20px;
+color: white;
+padding-left:5px;
+}
+
+
+#sel1,#sel2,#sel3,#sel4{
+   display: inline;
+}
+
+#sel1txt,#sel2txt,#sel3txt,#sel4txt,#sel5txt,#sel6txt{
+display: inline;
+padding-right:5px;
+cursor:pointer;
+font-size:12px;
+}
+
+.icon_2 {
+padding-top:5px;
+font-size:1.5em;
+padding-left:5px;
+color: white;
+}
+
+
+.white {
+color:white;
+padding-left:5px;
+weight:bold;
+
+}
+
+
+#third {
+position:relative;
+top:42px;
+width:100%;
+min-height:200px;
+overflow-y: auto;
+}
+
+
+#third_top {
+position:relative;
+width:100%;
+height:10px;
+}
+
+
+#map {
+width:100%;
+min-height:400px;
+height:400px;
+}
+
+#map_i{
+width:100%;
+min-height:400px;
+height:400px;
+border:none;
+}
+
+
+#footer{
+    position: fixed;
+    height: 42px;
+    background-color: #2f2f2f;
+    bottom: 0px;
+    left: 0px;
+    right: 0px;
+    margin-bottom: 0px;
+}
+
+
+
+
+
+/*  table style */
+
+
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size:20px;
+
+}
+
+table th {
+	padding:5px 5px;
+	border-top:1px solid #fafafa;
+	border-bottom:1px solid #e0e0e0;
+
+	border-left:1px solid #ededed;
+
+	background: #ededed;
+	background: -webkit-gradient(linear, left top, left bottom, from(#ededed), to(#ebebeb));
+	background: -moz-linear-gradient(top,  #ededed,  #ebebeb);
+}
+table th:first-child{
+	text-align: left;
+	padding-left:20px;
+}
+table tr:first-child th:first-child{
+	-moz-border-radius-topleft:3px;
+	-webkit-border-top-left-radius:3px;
+	border-top-left-radius:3px;
+}
+table tr:first-child th:last-child{
+	-moz-border-radius-topright:3px;
+	-webkit-border-top-right-radius:3px;
+	border-top-right-radius:3px;
+}
+table tr{
+	text-align: center;
+	padding-left:20px;
+}
+table tr td:first-child{
+	text-align: left;
+	padding-left:20px;
+	border-left: 0;
+}
+table tr td {
+	padding:7px;
+	border-top: 1px solid #ffffff;
+	border-bottom:1px solid #e0e0e0;
+	/*border-left: 1px solid #e0e0e0;*/
+	
+	background: #fafafa;
+	background: -webkit-gradient(linear, left top, left bottom, from(#fbfbfb), to(#fafafa));
+	background: -moz-linear-gradient(top,  #fbfbfb,  #fafafa);
+}
+table tr.even td{
+	background: #f6f6f6;
+	background: -webkit-gradient(linear, left top, left bottom, from(#f8f8f8), to(#f6f6f6));
+	background: -moz-linear-gradient(top,  #f8f8f8,  #f6f6f6);
+}
+
+table tr.odd td{
+	background: #fff;
+
+}
+
+table tr:last-child td{
+	border-bottom:0;
+}
+table tr:last-child td:first-child{
+	-moz-border-radius-bottomleft:3px;
+	-webkit-border-bottom-left-radius:3px;
+	border-bottom-left-radius:3px;
+}
+
+
+
+
+
+/* The Modal (background) */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 100000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgb(0,0,0); /* Fallback color */
+  background-color: rgba(0,0,0,0.8); /* Black w/ opacity */
+}
+
+/* Modal Content/Box */
+.modal-content {
+  background-color: #fefefe;
+  margin: 5%  auto; /* 15% from the top and centered */
+
+  padding: 20px;
+  border: 1px solid #888;
+  width: 50%; /* Could be more or less, depending on screen size */
+}
+
+/* The Close Button */
+.close {
+  color: #ffc0cb;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+  color: red;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+#modal-header{
+height:30px;
+}
+
+
+
+#modal-title{
+
+}
+
+#modal-txt {
+min-height:200px;
+          position: relative;
+            /*height: 180px;*/
+            background: #fff;
+            border: 1px dotted #444;
+            overflow: auto;
+            display: block;
+
+}
+
+
+.ital {
+font-size:10px;
+font-style: italic;
+color:#444;
+}
+
+
+       /* list box and selectors */
+
+        #tempcont {
+            position: relative;
+            height: 180px;
+            background: #fff;
+            border: 1px dotted #444;
+            overflow: auto;
+            display: block;
+        }
+
+
+
+        #sidebar {
+            position: relative;
+            border: 0px solid #aaa;
+            top: 0;
+
+        }
+
+        #sidebar p {
+            margin: 10px;
+        }
+
+        #sidebar ul#sidebar-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+	    /*font-style: italic;
+	    color: red;*/
+
+        }
+
+        #sidebar ul#sidebar-list li a {
+            display: block;
+            margin: 4px 5px;
+            padding: 5px 3px 3px 3px;
+            font: 16px Helvetica, sans-serif;
+            text-decoration: none;
+            color: white;
+	    font-weight:bold;
+            border: 1px solid #ddd;
+            background: #006983;
+        }
+
+
+        #sidebar ul#sidebar-list li a:hover {
+            background: #ffcccc;
+            color: #444;
+	    font-weight:bold;
+        }
+
+        #sidebar ul#sidebar-list li.visible a {
+            border: 1px solid #444;
+            background: #00ccff;
+        }
+
+        #sidebar ul#sidebar-list li.visible a:hover {
+            border: 1px solid #777;
+            background: #c2f0ff;
+        }
+
+
+
+
+/* Responsive */
+
+
+        @media screen and (max-width: 767px) {
+
+
+
+            #top, #top_content { 
+                height: 50px;
+            }
+
+
+
+	    #top_logo {
+                height: 39px;
+		left: -40px;
+	    }
+
+	    #top_title {
+                height: 39px;
+		width: 200px;
+		left: 160px;
+		
+	    }
+
+	    h1 {
+		font-size:1.2em;
+            }
+
+	    #top_bar {
+		top:39px;
+                height: 8px;
+	    } 
+
+
+	    #top_bar_left, #top_bar_right {
+                height: 8px;
+
+	    }
+
+
+	    table {
+
+		font-size:8px;
+
+	    }
+
+	     #sidebar ul#sidebar-list li a {
+		font-size:12px;
+	    }		
+
+	   .modal-content {
+		width:80%;
+	   }
+
+        }
+
+
+
+</style>
+
+
+
+
+<script src = "https://code.jquery.com/jquery-1.12.4.min.js"></script >
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.17.1/moment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.11/moment-timezone-with-data.js"></script>
+
+
+<script>
+
+/* CONFIGURE LINKED PAGES AND SATELLITE LIST HERE!!!! */
+
+var satSel=[
+{% for satellite in satelliteslist %}
+{{ satellite }}
+{% endfor %}
+];
+
+
+ 
+       /* Resise map and tabs script */
+
+        function resmapW() {
+
+            var winW = 0;
+            var winH = 0;
+
+
+            if (document.body && document.body.offsetWidth) {
+                winW = document.body.offsetWidth;
+                winH = document.body.offsetHeight;
+            }
+            if (document.compatMode == 'CSS1Compat' &&
+                document.documentElement &&
+                document.documentElement.offsetWidth) {
+                winW = document.documentElement.offsetWidth;
+                winH = document.documentElement.offsetHeight;
+            }
+            if (window.innerWidth && window.innerHeight) {
+                winW = window.innerWidth;
+                winH = window.innerHeight;
+            }
+
+
+            var divH = document.getElementById('third').style;
+            var divM = document.getElementById('map').style;
+            var divMi = document.getElementById('map_i').style;
+
+            
+	    if (window.matchMedia("(max-width: 767px)").matches) {
+                divH.height = winH - 122 + "px";
+		
+
+		var cH1 = document.getElementById('third').clientHeight;
+		var cH2 = document.getElementById('third_table').clientHeight;
+
+
+		divM.height= cH1 - cH2-12 +"px";
+		divMi.height= cH1 - cH2-12 +"px";
+
+
+            } else {
+                divH.height = winH - 156 + "px";
+
+		var cH1 = document.getElementById('third').clientHeight;
+		var cH2 = document.getElementById('third_table').clientHeight;
+
+
+		divM.height= cH1 - cH2-12 +"px";
+		divMi.height= cH1 - cH2-12 +"px";
+
+            }
+
+        }
+
+
+        $(document).ready(function () {
+
+            var resizer = function () {
+
+                //Manage map div size
+                resmapW();
+ 
+            };
+
+            resizer();
+
+            $(window).resize(function () {
+                resizer();
+            });
+
+
+	//clock script	
+		var zone_name = moment.tz.guess();
+		var timezone = moment.tz(zone_name).zoneAbbr() 
+		document.getElementById('sel3txt').innerHTML = timezone;
+                document.getElementById('sel6txt').innerHTML = "UTC";
+		startTime();
+
+	});
+
+
+function startTime() {
+
+	var today = moment();
+	var todayUTC=moment().utc()
+	document.getElementById('sel2txt').innerHTML = today.format('HH:mm:ss');
+        document.getElementById('sel5txt').innerHTML = todayUTC.format('HH:mm:ss');
+	var t = setTimeout(startTime, 500);
+}
+
+
+</script>
+
+
+</head>
+<body>
+
+<!-- The Modal -->
+<div>
+ <div id="myModal" class="modal">
+    <!-- Modal content -->
+    <div class="modal-content">
+	    <div id="modal-header"><span class="close">&times;</span></div>
+	    <div id="modal-title"><h1>Tracked Satellites:</h1></div>
+	    <div id="modal-desc"><span class="ital">click to select</span></div>
+	    <div id="modal-txt">
+
+                    <div id="sidebar">
+                           <ul id="sidebar-list">
+                                            
+                           </ul>
+                    </div>
+
+	    </div>
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+	<div id="top">
+		<div id="container">
+			<div id="top_content">
+
+
+				<div id="top_logo">
+
+					<img class="logo_img" src="https://hotspots.dea.ga.gov.au/assets/geoscience_inline.png" alt="logo">
+
+				</div>
+
+				<div id="top_title" class="title_cont">
+
+					<h1>Daily Satellite Schedule</h1>
+
+				</div>
+
+
+
+				<div id="top_bar">
+					<div id="top_bar_left">
+					</div>
+					<div id="top_bar_right">
+					</div>
+
+				</div>
+
+
+
+
+			</div>
+		</div>
+	</div>
+
+	<div id="second">
+		<div id="container">
+
+
+			<div id="selectors" class="sel_cont"> 
+				 <div id="sel1">
+
+<svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="sync-alt" class="svg-inline--fa fa-sync-alt fa-w-16" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="currentColor" d="M370.72 133.28C339.458 104.008 298.888 87.962 255.848 88c-77.458.068-144.328 53.178-162.791 126.85-1.344 5.363-6.122 9.15-11.651 9.15H24.103c-7.498 0-13.194-6.807-11.807-14.176C33.933 94.924 134.813 8 256 8c66.448 0 126.791 26.136 171.315 68.685L463.03 40.97C478.149 25.851 504 36.559 504 57.941V192c0 13.255-10.745 24-24 24H345.941c-21.382 0-32.09-25.851-16.971-40.971l41.75-41.749zM32 296h134.059c21.382 0 32.09 25.851 16.971 40.971l-41.75 41.75c31.262 29.273 71.835 45.319 114.876 45.28 77.418-.07 144.315-53.144 162.787-126.849 1.344-5.363 6.122-9.15 11.651-9.15h57.304c7.498 0 13.194 6.807 11.807 14.176C478.067 417.076 377.187 504 256 504c-66.448 0-126.791-26.136-171.315-68.685L48.97 471.03C33.851 486.149 8 475.441 8 454.059V320c0-13.255 10.745-24 24-24z"></path></svg>
+
+				 
+				</div> 
+				<div id="sel1txt" class="white">Change Satellite</div>
+				<div id="sel3">
+<svg aria-hidden="true" focusable="false" data-prefix="far" data-icon="clock" class="svg-inline--fa fa-clock fa-w-16" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="currentColor" d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm0 448c-110.5 0-200-89.5-200-200S145.5 56 256 56s200 89.5 200 200-89.5 200-200 200zm61.8-104.4l-84.9-61.7c-3.1-2.3-4.9-5.9-4.9-9.7V116c0-6.6 5.4-12 12-12h32c6.6 0 12 5.4 12 12v141.7l66.8 48.6c5.4 3.9 6.5 11.4 2.6 16.8L334.6 349c-3.9 5.3-11.4 6.5-16.8 2.6z"></path></svg>
+
+				 </div>
+
+				<div id="sel2txt" class="white">Time </div>		
+				<div id="sel3txt" class="white"></div>
+                                <div id="sel4txt" class="white">|</div> 
+                                <div id="sel5txt" class="white">Time </div>                        
+                                <div id="sel6txt" class="white"></div>
+
+
+			</div>
+
+	       </div>
+						
+	</div>
+
+	<div id="third">
+		<div id="container">
+
+			<div id="third_top">
+				<div id="db">
+
+				</div>
+
+			</div>
+
+			<div id="third_table">
+
+
+<!-- ADD THIS TABLE VIA PYTHON SCRIPT: --> 
+
+
+		<table>
+		<tr>
+			<th>Satellite</th>
+			<th>Sensor</th>
+			<th>Orbit</th>
+			<th>Node</th>
+			<th>AOS time</th>
+			<th>LOS time</th>
+		</tr>
+		{% for acquisition in content %}
+		
+			<tr>{{ acquisition }}</tr>
+		
+		{% endfor %}
+		</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+			</div>
+
+			<div id="third_map">
+
+
+				<div id="map">
+				
+					<iframe id="map_i" frameborder="0" src="{{ foliumhtml }}"></iframe>
+
+
+				</div>
+
+
+
+
+
+
+			</div>
+
+
+		</div>
+	</div>
+
+	<div id="footer">
+		<div id="container">
+			
+		</div>
+	</div>
+
+
+
+
+
+
+
+
+<script>
+
+/* --- template functions script --- */
+	 
+/* Modal window plus config loading scripts */
+
+// Get the modal
+var modal = document.getElementById("myModal");
+
+// Get the <span> element that closes the modal
+var span = document.getElementsByClassName("close")[0];
+
+
+// When the user clicks on <span> (x), close the modal
+span.onclick = function() {
+  modal.style.display = "none";
+  //removeCat('sidebar');// remove li elements first!
+}
+
+// When the user clicks anywhere outside of the modal, close it
+window.onclick = function(event) {
+  if (event.target == modal) {
+    modal.style.display = "none";
+
+  }
+}
+
+
+$( "#sel1,#sel1txt" ).click(function() {
+
+
+	modal.style.display = "block";
+
+
+
+	removeCat('sidebar-list');// remove li elements first!
+
+
+	$.each(satSel, function( index, value ) {
+		var sName = value[0];
+		var sURL=value[1];
+		addSideBarItem(sName, sURL , regionListClickHandler);
+		
+	});
+
+
+});
+
+	
+
+
+        function addSideBarItem(title, id, func) {
+
+ 
+            var listItem = document.createElement('li');
+            var listItemLink = listItem.appendChild(document.createElement('a'));
+            listItem.id = id;
+            listItemLink.href = id;
+
+            listItemLink.innerHTML = title;
+            listItemLink.onclick = func;
+            document.getElementById('sidebar-list').appendChild(listItem);
+
+            return listItemLink;
+        }
+
+
+	function regionListClickHandler(){
+
+		//NOT USED
+	}
+
+
+
+        function removeCat(itm) {
+
+
+            var toremove = document.getElementById(itm);
+            removeChildrenFromNode(toremove);
+
+        }
+
+
+        // function to remove content of selection boxes...
+
+        function removeChildrenFromNode(node) {
+            if (node.hasChildNodes()) {
+                while (node.childNodes.length >= 1) {
+                    node.removeChild(node.firstChild);
+                }
+            }
+        }
+
+
+</script>
+
+
+
+
+</body>
+</html>
