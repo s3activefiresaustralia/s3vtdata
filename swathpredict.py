@@ -31,6 +31,7 @@ from colour import Color
 parser.add_argument('--configuration', dest='configuration', default='config.yaml',help='ground station configuration')
 parser.add_argument('--start', dest='start', help='start time YYYY-MM-DDTHH:MM:SS format')
 parser.add_argument('--period', dest='period', help='ground station configuration')
+parser.add_argument('--output_path', dest='output_path', help='ground station configuration')
 args = parser.parse_args()
 
 def getredtoblack(number):
@@ -888,7 +889,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                 if not any(d['SWATH_FILENAME'] == attributes['SWATH_FILENAME'] for d in schedule):
                     #if not attributes in schedule:
                     # if not any((x['Satellite name'] == satname and x['Orbit'] == orbitnumber) for x in schedule):
-                    if imagingnode == 'both' or imagingnode == attributes['Node']:
+                    if (imagingnode == 'both' or imagingnode == attributes['Node']) and (to_datetime(rt) < (passes_begin_time + timedelta(minutes=passes_period))):
                         schedule.append(attributes)
 
                         # Create swath footprint ogr output
@@ -991,7 +992,12 @@ if __name__ == '__main__':
     ground_station_name = cfg['scenario']['ground_station_name']
     observer_horizon = cfg['scenario']['observer-horizon']
     timestep = timedelta(seconds=cfg['scenario']['timestep'])
-    output_path = os.path.relpath(cfg['outputs']['output_path'], os.getcwd())
+    
+    if not args.output_path:
+        output_path = os.path.relpath(cfg['outputs']['output_path'], os.getcwd())
+    else:
+        output_path = args.output_path
+    
     schedule_url_basename = cfg['outputs']['schedule_url_basename']
 
     if not os.path.exists(output_path):
