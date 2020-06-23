@@ -48,7 +48,7 @@ missions:
       addtoorbit: 0
       sensor: 
         name: SLSTR
-        node: descending
+        node: both
         swath: 1500000
   - 
     description: "Sentinel 3B SLSTR"
@@ -58,7 +58,7 @@ missions:
       addtoorbit: 0
       sensor: 
         name: SLSTR
-        node: descending
+        node: both
         swath: 1500000
   - 
     description: "Terra MODIS"
