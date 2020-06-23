@@ -21,15 +21,21 @@ Select Sentinel 3 Validation Team profile following login
 - You will need to run this to load the available geojson hotspots to your Sandbox instance.
 
 - xmldict does not install - work around for now is to do the following
-To resolve: launch console
+Options to resolve:
+Option 1 - launch terminal
+'> cd s3vt folder
+'> source sandbox_libraries.sh
+
+Options to resolve:
+launch console
 
 * use shift/enter to execute the below
-> import sys
-> !{sys.executable} -m pip install xmltodict
-> !{sys.executable} -m pip install pyephem
-> !{sys.executable} -m pip install pyorbital
-> !{sys.executable} -m pip install simplekml
-> !{sys.executable} -m pip install colour
+'> import sys
+'> !{sys.executable} -m pip install xmltodict
+'> !{sys.executable} -m pip install pyephem
+'> !{sys.executable} -m pip install pyorbital
+'> !{sys.executable} -m pip install simplekml
+'> !{sys.executable} -m pip install colour
 
 - You should see something like:
 Collecting xmltodict
