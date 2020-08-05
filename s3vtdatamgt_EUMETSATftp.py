@@ -115,7 +115,7 @@ def get_eumetsat_dir(
     return ret_code
     
 
-def recursive_mlsd(ftp_object, path="", maxdepth=8, match_suffix=None):
+def recursive_mlsd(ftp_object, path="", maxdepth=7, match_suffix=None):
     """Run the FTP's MLSD command recursively
     modified from: 
         https://codereview.stackexchange.com/questions/232647/recursively-listing-the-content-of-an-ftp-server
