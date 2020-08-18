@@ -2,18 +2,22 @@
 configurations: 
   - 
     description: "S3VT Active Fire product performance in Australia"
-    username: 'XXXX'
-    password: 'XXXX'
+    username: 'XXXXX'
+    password: 'XXXXX'
     url: 'https://131.176.236.38/dhus/'
-    ftpusername: 'XXXX'
-    ftppassword: 'XXXX'
+    ftpusername: 'XXXXX'
+    ftppassword: 'XXXXX'
     ftpurl: 'ftp.acri-cwa.fr'
     ftpdirectory: 'SL_2_FRP_Australia'
+    eumetsatftpusername: 'XXXXX'
+    eumetsatftppassword: 'XXXXX' 
+    eumetsatftpurl: 'XXXXX'
+    eumetsatftpdirectory: 's3-atmosphere' 
     aoi: 'POLYGON((94.26269531249999 5.528510525692795,96.45996093749997 -50.958426723359906,179.69238281249997 -51.23440735163458,175.73730468749994 3.4256915244180703,94.26269531249999 5.528510525692795,94.26269531249999 5.528510525692795))'
     awss3bucket: 's3vtaustralia'
     awss3key: 'outputs/'
-    awskeyid: 'XXXX'
-    awskeypass: 'XXXX'
+    awskeyid: 'XXXXX'
+    awskeypass: 'XXXXX'
     time_period: 60 #time period prior to now in days
     to_date: # '2018-01-01T00:00:00.000Z' # date to end period upon - null defaults to time = now
     bbox: [-28.157021, 140.961682, -39.159082, 154.109154 ] # y_max, x_min, y_min, x_max
@@ -27,5 +31,5 @@ configurations:
         # Suggest only enabling the below for short temporal intervals or individually i.e. hash out the above
         #AHI: ['SRSS', 'WFABBA']
         #INS1: ['INS1']
-    hotspots_login: 'XXXX'
-    hotspots_password: 'XXXX'
+    hotspots_login: 'XXXXX'
+    hotspots_password: 'XXXXX'
