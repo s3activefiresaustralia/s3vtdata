@@ -260,7 +260,7 @@ def s3_frp_list(
     for bucket_object in s3bucket.objects.all():
         key_name = bucket_object.key
         # TODO better implementation to skip eumetsat's s3 data folder
-        if exclude_s3_key in key_name:
+        if key_name.startswith(exclude_s3_key):
             continue 
         if match_suffix == '.SEN3':
             if Path(key_name).parent.suffix == match_suffix:
