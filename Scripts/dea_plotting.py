@@ -59,7 +59,7 @@ import warnings
 
 
 def rgb(ds,
-        bands=['nbart_band07', 'nbart_band04', 'nbart_band02'],
+        bands=['nbart_swir_2', 'nbart_nir_1', 'nbart_green'],
         index=None,
         index_dim='time',
         robust=True,
