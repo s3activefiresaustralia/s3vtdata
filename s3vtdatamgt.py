@@ -15,7 +15,6 @@
 ##################
 
 import boto3
-from botocore.exceptions import ClientError
 from netCDF4 import Dataset
 import datetime as dt
 import json
@@ -27,9 +26,7 @@ import yaml
 import argparse
 import os
 import subprocess
-from datetime import date
 import logging as logger
-import os
 import sys
 
 logger.basicConfig(format='%(levelname)s:%(message)s', level=logger.INFO)
@@ -42,26 +39,35 @@ args = parser.parse_args()
 from jinja2 import Environment, FileSystemLoader
 
 
-def get_file_list(username, password, aoi, startrecord):
+def get_file_list(url, username, password, aoi, startrecord):
     # rows returned is limited to 100, add pagination but looking at number of records and incrementing by 100 each iteration
     try:
-        subprocess.call(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt', 'https://131.176.236.38/dhus/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json'])
-        logger.info(str(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt', 'https://131.176.236.38/dhus/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json']))
+        # wget --no-check-certificate --user=simonaoliver --password=Excellent1234 --output-document=query_results.txt 
+        # 'https://scihub.copernicus.eu/dhus/search?q=footprint:"Intersects(POLYGON((94.26 5.52,96.45 -50.95,179.69 -51.23,175.73 3.42,94.26 5.52,94.26 5.52)))" 
+        # AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start=0&format=json'
+        
+        logger.info(str(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt',
+                         'https://scihub.copernicus.eu/dhus/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json']))
+        subprocess.call(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt',
+                         'https://scihub.copernicus.eu/dhus/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json'])
         success = True
     except:
-        logger.info("Remote file listing process failed "+str(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt', 'https://131.176.236.38/dhus/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json']))
+        logger.info("Remote file listing process failed "+str(['wget','--no-check-certificate', '--user='+username, '--password='+password, '--output-document=filelist.txt', 'https://scihub.copernicus.eu/apihub/search?q=footprint:"Intersects('+aoi+')" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start='+startrecord+'&format=json']))
         success = False
         
     return(success)
 
-def get_file(username, password, uuid, zipname):
+def get_file(url, username, password, uuid, zipname):
     # rows returned is limited to 100, add pagination but looking at number of records and incrementing by 100 each iteration
     try:
-        subprocess.call(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username, '--password='+password, "https://131.176.236.38/dhus/odata/v1/Products('"+uuid+"')/$value"])
-        logger.info(str(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username, '--password='+password, "https://131.176.236.38/dhus/odata/v1/Products('"+uuid+"')/$value"]))
+        logger.info(str(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username,
+                         '--password='+password, "https://scihub.copernicus.eu/dhus/odata/v1/Products('"+uuid+"')/$value"]))
+        subprocess.call(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username,
+                         '--password='+password, "https://scihub.copernicus.eu/dhus/odata/v1/Products('"+uuid+"')/$value"])
+        ### wget --no-check-certificate --user=simonaoliver --password=Excellent1234 --output-document=query_results.txt 'https://scihub.copernicus.eu/dhus/search?q=footprint:"Intersects(POLYGON((-4.53 29.85,26.75 29.85,26.75 46.80,-4.53 46.80,-4.53 29.85)))" AND platformname:Sentinel-3 AND producttype:SL_2_FRP___&rows=100&start=0&format=json'
         success = True
     except:
-        logger.info("Remote file retrieval failed "+str(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username, '--password='+password, "https://131.176.236.38/dhus/odata/v1/Products('"+uuid+"')/$value"]))
+        logger.info("Remote file retrieval failed "+str(['wget', '--no-check-certificate', '--content-disposition',  '--continue', '--user='+username, '--password='+password, "https://scihub.copernicus.eu/odata/v1/Products('"+uuid+"')/$value"]))
         success = False
         
     try:
@@ -197,7 +203,8 @@ if __name__ == '__main__':
             responselist = [] 
         
             # Determine number of records to retrieve
-            get_file_list(configuration['username'], configuration['password'], configuration['aoi'], str(startrecord))
+            get_file_list(configuration['url'], configuration['username'], configuration['password'], configuration['aoi'], str(startrecord))
+            
             with open('filelist.txt') as results:
                 for i in results: 
                     response = json.loads(i)
@@ -213,8 +220,8 @@ if __name__ == '__main__':
         
             while startrecord <= upperlimit:
                 startrecord = startrecord+100
-        
-                get_file_list(configuration['username'], configuration['password'], configuration['aoi'], str(startrecord)) 
+
+                get_file_list(configuration['url'], configuration['username'], configuration['password'], configuration['aoi'], str(startrecord)) 
                 with open('filelist.txt') as results:
                     for i in results: responselist.append(json.loads(i))
         
@@ -231,12 +238,13 @@ if __name__ == '__main__':
         s3bucket = s3.Bucket(configuration['awss3bucket'])
         
         for bucket_object in s3bucket.objects.all():
-            s3bucketobject = str(bucket_object.key).split("/")[2]
-            if '.SEN3' in s3bucketobject:
-                s3folderlist.append(s3bucketobject)
-            if '.FRP.geojson' in s3bucketobject:
-                s3geojsonlist.append(s3bucketobject)
-            logger.info(str(bucket_object.key).split("/")[2])                       
+            if str(bucket_object.key) == 'data':
+                s3bucketobject = str(bucket_object.key).split("/")[2]
+                if '.SEN3' in s3bucketobject:
+                    s3folderlist.append(s3bucketobject)
+                if '.FRP.geojson' in s3bucketobject:
+                    s3geojsonlist.append(s3bucketobject)
+                logger.info(str(bucket_object.key).split("/")[2])                       
 
         # Read inventory to geopandas - write to geojson       
                 
@@ -253,7 +261,7 @@ if __name__ == '__main__':
                             
                             df = pd.DataFrame.from_dict(entry, orient='index')
                                     
-                            polygon = get_polygon_from_gml(xmltodict.parse(entry['str'][2]['content'])['gml:Polygon']['gml:outerBoundaryIs']['gml:LinearRing']['gml:coordinates'])
+                            polygon = get_polygon_from_gml(xmltodict.parse(entry['str'][1]['content'])['gml:Polygon']['gml:outerBoundaryIs']['gml:LinearRing']['gml:coordinates'])
                             
                             df = df.transpose()
                             df['Coordinates'] = Polygon(polygon)
@@ -311,7 +319,7 @@ if __name__ == '__main__':
                 s3hotspots = s3vtgpd.loc[i]['title']+'.FRP.geojson'
                 
         
-                if get_file(configuration['username'], configuration['password'], uuid, zipname) == False:
+                if get_file(configuration['url'], configuration['username'], configuration['password'], uuid, zipname) == False:
                     s3vtgpd.at[i, 'download'] = 0
                     break
                 else:
