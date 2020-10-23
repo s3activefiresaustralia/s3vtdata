@@ -13,6 +13,7 @@ import logging as logger
 import ftplib
 import re 
 import shutil 
+import requests
 
 from netCDF4 import Dataset
 import pandas as pd
@@ -20,6 +21,7 @@ import geopandas as gpd
 import numpy as np
 import boto3
 from botocore.exceptions import ClientError
+from bs4 import BeautifulSoup
 import yaml
 import numpy as np
 
@@ -541,3 +543,161 @@ def _get_esa_s3_listing(
             outfile=esa_s3_frp_list_file
         )
     return esa_s3_frp_list_file
+
+
+def get_cophub_frp_listing(
+    domain: str = 'http://dapds00.nci.org.au',
+    ext: str = '.zip',
+    params: dict = {},
+    start_year: int = 2020,
+    end_year: int = 2020,
+    outfile: Optional[Union[str, Path]] = Path(os.getcwd()).joinpath("cophub_frp_list.csv")
+):
+    """Method to get the listing Sentinel-3 FRP data from cophub"""
+    dir_listing = []
+    for year in range(start_year, end_year + 1):
+        for month in range(1, 13):
+            print(f"getting frp listing for {year}-{month:02} from {domain}")
+            month_url = f"{domain}/thredds/catalog/fj7/Copernicus/Sentinel-3/SLSTR/SL_2_FRP___/{year}/{year}-{month:02}/catalog.html"
+            try:
+                response = requests.get(month_url, params=params)
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as err:
+                print(err)
+                continue
+            
+            for day in range(1, 32):
+                print(day)
+                day_url = f"{domain}/thredds/catalog/fj7/Copernicus/Sentinel-3/SLSTR/SL_2_FRP___/{year}/{year}-{month:02}/{year}-{month:02}-{day:02}/catalog.html"
+                try:
+                    response = requests.get(day_url, params=params)
+                except requests.exceptions.HTTPError as err:
+                    print(err)
+                    continue
+                response_text = response.text
+                soup = BeautifulSoup(response_text, 'html.parser')
+                parent = [node.get('href').split('=')[1] for node in soup.find_all('a') if node.get('href').endswith(ext)]
+                for p in parent:
+                    dir_listing.append(f"http://dapds00.nci.org.au/thredds/fileServer/fj7/Copernicus/Sentinel-3/{p[14:]}")
+                   
+    with open(outfile.as_posix(), "w") as fid:
+        for item in dir_listing:
+            fid.write(f"{item}\n")
+    return outfile        
+             
+    
+def subset_cophub_frp_list(
+    esa_s3_frp_file: Union[Path, str],
+    eumetsat_s3_frp_file: Union[Path, str],
+    cophub_frp_file: Union[Path, str]
+) -> pd.DataFrame:
+    """Returns the list of EUMETSAT's FRP that has same attributes as ESA's FRP.
+    
+    :param esa_frp_file: The path to esa's file with FRP products.
+    :param eumetsat_frp_file: The path to eumetsat's file with FRP product.
+    :param cophub_frp_file: The path to Cophub FRP file.
+        
+    :return:
+        DataFrame with Cophub's FRP attributes that matches the
+        ESA's FRP in s3 listing of ESA but not in eumetsat's s3 listing.
+    """
+    
+    esa_df = pd.read_csv(esa_s3_frp_file, names=['title'], header=None)
+    eu_df = pd.read_csv(eumetsat_s3_frp_file, names=['title'], header=None)
+    cophub_df = pd.read_csv(cophub_frp_file, names=['title'], header=None)
+    
+    # create new dataframes with attributes needed to match between cophub, esa and eumetsat
+    column_names = ["title", "start_date", "sensor", 'relative_orbit']
+    
+    
+    # populate esa's df attribute
+    if not Path(esa_s3_frp_file).with_suffix(".pkl").exists():
+        esa_attrs_df = pd.DataFrame(columns=column_names)
+        for idx, row in esa_df.iterrows():
+            start_dt, sensor, relorb = _get_frp_attributes_from_name(row["title"])
+            esa_attrs_df = esa_attrs_df.append(
+                {
+                    'title': row["title"],
+                    'start_date': start_dt,
+                    'sensor': sensor,
+                    'relative_orbit': relorb
+                },
+                ignore_index=True
+            )
+        esa_attrs_df.to_pickle(Path(esa_s3_frp_file).with_suffix(".pkl"))
+    else:
+        esa_attrs_df = pd.read_pickle(Path(esa_frp_file).with_suffix(".pkl"))
+        
+    # populate eumetsat's df attribute
+    if not Path(eumetsat_s3_frp_file).with_suffix(".pkl").exists():
+        eu_attrs_df = pd.DataFrame(columns=column_names)
+        for idx, row in eu_df.iterrows():
+            start_dt, sensor, relorb = _get_frp_attributes_from_name(Path(row["title"]).name)
+            eu_attrs_df = eu_attrs_df.append(
+                {
+                    'title': row["title"],
+                    'start_date': start_dt,
+                    'sensor': sensor,
+                    'relative_orbit': relorb
+                },
+                ignore_index=True
+            )
+        eu_attrs_df.to_pickle(Path(eumetsat_s3_frp_file).with_suffix(".pkl"))
+    else:
+        eu_attrs_df = pd.read_pickle(Path(eumetsat_s3_frp_file).with_suffix(".pkl"))
+        
+    # populate cophub's df attribute
+    if not Path(cophub_frp_file).with_suffix(".pkl").exists():
+        cophub_attrs_df = pd.DataFrame(columns=column_names)
+
+        for idx, row in cophub_df.iterrows():
+            start_dt, sensor, relorb = _get_frp_attributes_from_name(Path(row["title"]).name)
+            cophub_attrs_df = cophub_attrs_df.append(
+                {
+                    'title': row["title"],
+                    'start_date': start_dt,
+                    'sensor': sensor,
+                    'relative_orbit': relorb
+                },
+                ignore_index=True
+            )
+        cophub_attrs_df.to_pickle(Path(cophub_frp_file).with_suffix(".pkl"))
+    else:
+        cophub_attrs_df = pd.read_pickle(Path(cophub_frp_file).with_suffix(".pkl"))
+        
+    esa_attrs_df["start_date"] = pd.to_datetime(esa_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
+    eu_attrs_df["start_date"] = pd.to_datetime(eu_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
+    cophub_attrs_df["start_date"] = pd.to_datetime(cophub_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
+
+    # perform merge of eumetsat's df and esa's df for common start_date, sensor
+    # and relative orbit attributes.
+    cophub_esa_common_attrs_df = cophub_attrs_df.merge(
+        esa_attrs_df,
+        how="inner",
+        on=["start_date", "sensor", "relative_orbit"]
+    )
+    
+    print(cophub_esa_common_attrs_df)
+    
+    # merge cophub_esa_common with eumetsat's on `outer` join
+    cophub_outer_df = cophub_esa_common_attrs_df.merge(
+        eu_attrs_df,
+        how='outer',
+        indicator=True,
+        on=["start_date", "sensor", "relative_orbit"]
+    )
+    
+    # get cophub's df where there is no common attrs with eumetsat's attrs
+    cophub_subset = cophub_outer_df[cophub_outer_df['_merge']=='left_only']
+    
+    print(cophub_subset)
+    return cophub_subset
+
+
+if __name__ =='__main__':
+    # get_cophub_frp_listing()
+    subset_cophub_frp_list(
+        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/esa_s3_frp_sen3_list.csv',
+        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/eumetsat_s3_frp_sen3_list.csv',
+        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/eumetsat_s3_frp_sen3_list.csv'
+    )
