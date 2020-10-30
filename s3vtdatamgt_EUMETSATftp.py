@@ -114,6 +114,7 @@ def download_cophub(
     try:
         cmd = [
             'wget', 
+            '-q',
             '--recursive',
             str(url),
             '-nH',
@@ -709,7 +710,8 @@ def get_gpd_attrs(
     aws_secret_access_key,
     s3_bucket_name,
     frp_file,
-    s3_folder
+    s3_folder,
+    status: Optional[str] = None
 ):
     title = Path(frp_file).name
     _dt, sensor, relorb = _get_frp_attributes_from_name(title)
@@ -720,6 +722,8 @@ def get_gpd_attrs(
     )
     s3_client = aws_session.client('s3')
     with tempfile.TemporaryDirectory() as tmpdir:
+        if status is not None:
+            print(status)
         xfd_file = Path(tmpdir).joinpath("xfdumanifest.xml")
         if s3_folder is not None:
             try:
@@ -735,7 +739,6 @@ def get_gpd_attrs(
         else:
             xfd_file = download_cophub(frp_file, tmpdir)
         poly = get_polygon(xfd_file)
-        print(_dt)
         return {
             'title': frp_file,
             'start_date': _dt,
@@ -838,13 +841,14 @@ def create_cophub_frp_df(
                         aws_secret_access_key,
                         s3_bucket_name,
                         frp_file,
-                        None
+                        None,
+                        f"processing {idx} of {len(cop_frp_files)}",
                     )
-                    for frp_file in cop_frp_files
+                    for idx, frp_file in enumerate(cop_frp_files[0:1000])
                 ]
             )
         for gpd_attrs in results:
-            if gpt_attrs is not None:
+            if gpd_attrs is not None:
                 cophub_attrs_df = cophub_attrs_df.append(gpd_attrs, ignore_index=True)
         cophub_attrs_df.to_pickle(Path(cophub_frp_file).with_suffix(".pkl"))
     else:
@@ -913,7 +917,8 @@ def generate_hotspot_geojson(
     aws_access_key_id: str,
     aws_secret_access_key: str,
     s3_bucket_name: str,
-    s3_upload: Optional[bool] = False
+    s3_upload: Optional[bool] = False,
+    outdir: Optional[Union[Path, str]] = Path(os.getcwd()).joinpath("COPHUB_GEOJSON")
 ):
     aws_session = boto3.Session(
         aws_access_key_id=aws_access_key_id,
@@ -944,6 +949,8 @@ def generate_hotspot_geojson(
                         if s3_upload:
                             print(gpd_hotspotfile)
                             s3_upload_file(gpd_hotspotfile, s3_client, s3_bucket_name, prefix=_frp_dir_name)
+                        outdir.joinpath(_frp_dir_name).mkdir(parents=True, exist_ok=True)
+                        shutil.move(gpd_hotspotfile.as_posix(), f"{outdir.as_posix()}/{_frp_dir_name}/{gpd_hotspotfile.name}")
         return download_url
     except Exeption as err:
         logger.info(f"failed to process {download_url}: {err}")
@@ -1093,9 +1100,9 @@ def process_cophub_subset(
         cophub_attrs_df,
         output_dir
     )
-    
+    print(subset_cop_download_df)
     # process the .geojson file and upload to S3 if s3_upload is True.
-    s3_upload = True # set to True if files are to be uploaded to s3
+    s3_upload = False # set to True if files are to be uploaded to s3
     cop_download_list = [row['title'] for row in subset_cop_download_df.iterrows()]
     with Pool(processes=nprocs) as pool:
         results = pool.starmap(
@@ -1106,14 +1113,14 @@ def process_cophub_subset(
                     aws_access_key_id,
                     aws_secret_access_key,
                     s3_bucket_name,
-                    s3_upload=s3_upload
+                    s3_upload
                 )
                 for frp_url in cop_download_list
             ]
         )
-        for res in results:
-            if res is not None:
-                with open(Path(output_dir).joinpath("cophub_hotspot_completed.csv")) as fid:
+        with open(Path(output_dir).joinpath("cophub_hotspot_completed.csv"), "w") as fid:
+            for res in results:
+                if res is not None:
                     fid.writeline(str(res))
                     
         
