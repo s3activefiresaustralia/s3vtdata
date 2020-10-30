@@ -7,14 +7,22 @@ import sys
 from pathlib import Path
 from typing import Union, List, Iterable, Optional, Tuple
 from datetime import datetime
+from multiprocessing import Pool as ProcessPool
 import subprocess
 import tempfile
+import time
 import logging as logger
 import ftplib
-import re 
+import re
+import lxml
+from lxml import etree
 import shutil 
 import requests
+import zipfile
 
+from shapely.geometry import Polygon
+
+import xmltodict
 from netCDF4 import Dataset
 import pandas as pd
 import geopandas as gpd
@@ -27,6 +35,21 @@ import numpy as np
 
 
 logger.basicConfig(format='%(levelname)s:%(message)s', level=logger.INFO)
+
+
+class DummyPool:
+    def __enter__(self):
+        return self
+
+    def starmap(self, func, args):
+        return [func(*arg) for arg in args]
+
+
+def Pool(processes):
+    if not processes:
+        return DummyPool()
+
+    return ProcessPool(processes=processes)
 
 
 def solar_day(utc, longitude):
@@ -83,6 +106,34 @@ def eumetsat_ftp_file_list(
     return(ftp.nlst())
 
 
+def download_cophub(
+    url: Union[str, Path],
+    out_directory: Union[Path, str]
+) -> Union[Path, str]:
+    """Download file from Cophub"""
+    try:
+        cmd = [
+            'wget', 
+            '--recursive',
+            str(url),
+            '-nH',
+            '--cut-dirs=10',
+            '--directory-prefix='+out_directory
+            ]
+        ret_code = subprocess.check_call(cmd)
+    except:
+        ret_code = 1
+    zipf_name = Path(out_directory).joinpath(Path(url).name)
+    xfd_file = Path(out_directory).joinpath(f"{Path(url).stem}.SEN3/xfdumanifest.xml")                          
+    if ret_code == 0:
+        with zipfile.ZipFile(zipf_name.as_posix(), 'r') as zip_ref:
+            zip_ref.extractall(str(out_directory))
+        os.remove(zipf_name)
+    if xfd_file.exists():
+        return xfd_file
+    return ret_code
+
+
 def get_eumetsat_dir(
     username: str,
     password: str,
@@ -97,6 +148,7 @@ def get_eumetsat_dir(
     :param directory: The directory in ftp site to list its contents.
     """
     out_directory = f"{str(out_directory)}/{Path(url).name}"
+    print(out_directory)
     try:
         cmd = [
                 'wget', 
@@ -110,6 +162,7 @@ def get_eumetsat_dir(
                 '--directory-prefix='+out_directory
             ]
         ret_code = subprocess.check_call(cmd)
+        print(ret_code)
         logger.info(["".join(item) for item in cmd])
     except:
         ret_code = 1
@@ -316,6 +369,29 @@ def _get_frp_attributes_from_name(
     sensor_matches = re.findall(sensor_pattern, search_string)
     relorb_matches = re.search(relorb_pattern, search_string[68:73])
     return date_matches[0], sensor_matches[0], relorb_matches[0][1:-1]
+    
+    
+def get_polygon(xml_manifest: Union[Path, str]):
+    """Get Polygon from xmldummanifest.xml file"""
+    try:
+        tree = etree.parse(xml_manifest.as_posix())
+    except:
+        tree = etree.parse(xml_manifest)
+    root = tree.getroot()
+    extracted = root.findall('./metadataSection/metadataObject/metadataWrap/xmlData/sentinel-safe:frameSet/sentinel-safe:footPrint/gml:posList', root.nsmap)
+    coords = extracted[0].text
+    split = re.split(" ", coords)
+    coordsx = []
+    coordsy = []
+    final_list = []
+    for c in range(0, len(split)):
+        if c % 2 == 0:
+            coordsx.append(float(split[c]))
+        else:
+            coordsy.append(float(split[c]))
+    for c in range(0, len(coordsx)):
+        final_list.append((coordsy[c], coordsx[c]))
+    return Polygon(final_list)
     
     
 def subset_eumetsat_frp_list(
@@ -545,61 +621,151 @@ def _get_esa_s3_listing(
     return esa_s3_frp_list_file
 
 
-def get_cophub_frp_listing(
-    domain: str = 'http://dapds00.nci.org.au',
-    ext: str = '.zip',
-    params: dict = {},
-    start_year: int = 2020,
-    end_year: int = 2020,
+def _get_cophub_frp_listing(
+    domain: Optional[str] = 'http://dapds00.nci.org.au',
+    ext: Optional[str] = '.zip',
+    params: Optional[dict] = None,
+    start_year: Optional[int] = 2020,
+    end_year: Optional[int] = 2020,
     outfile: Optional[Union[str, Path]] = Path(os.getcwd()).joinpath("cophub_frp_list.csv")
-):
-    """Method to get the listing Sentinel-3 FRP data from cophub"""
-    dir_listing = []
+) -> Union[Path, str]:
+    """Method to get the listing Sentinel-3 FRP data from cophub.
+    
+    Any file that has processing center other than `MAR` will be excluded. The MAR
+    processing center is assumed to have used EUMETSAT FRP algorithm.
+    
+    :param domain: The domain name of cophub data host site.
+    :param ext: The extension of the FRP product file.
+    :param params: The parameter {username: USERNAME, password: PASSWORD} if required.
+    :param start_year: The start year to execute search for.
+    :param end_year: The end year to execute search for.
+    :param outfile: The output file to save the FRP product listing from the site.
+    
+    :return:
+        The full path to a file with the listing of FRP products from the site.
+    """
+    
+    if params is None:
+        params = {}
+        
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
-            print(f"getting frp listing for {year}-{month:02} from {domain}")
+            dir_listing = []
+            year_month_file = Path(outfile).parent.joinpath(f"monthly_cophub_frp_list_{year}{month:02}.csv")
+            if year_month_file.exists():
+                continue
+            logger.info(f"getting frp listing for {year}-{month:02} from {domain}")
             month_url = f"{domain}/thredds/catalog/fj7/Copernicus/Sentinel-3/SLSTR/SL_2_FRP___/{year}/{year}-{month:02}/catalog.html"
             try:
                 response = requests.get(month_url, params=params)
                 response.raise_for_status()
             except requests.exceptions.HTTPError as err:
-                print(err)
+                logger.info(err)
                 continue
             
             for day in range(1, 32):
-                print(day)
                 day_url = f"{domain}/thredds/catalog/fj7/Copernicus/Sentinel-3/SLSTR/SL_2_FRP___/{year}/{year}-{month:02}/{year}-{month:02}-{day:02}/catalog.html"
                 try:
                     response = requests.get(day_url, params=params)
                 except requests.exceptions.HTTPError as err:
-                    print(err)
+                    logger.info(f'Excepted HTTP Error: {err}')
                     continue
+                    
                 response_text = response.text
                 soup = BeautifulSoup(response_text, 'html.parser')
                 parent = [node.get('href').split('=')[1] for node in soup.find_all('a') if node.get('href').endswith(ext)]
+                
+                # if Timeout Error occurs, retry once more after sleeping for 10s
+                ret_code = int(response.status_code)
+                while ret_code == 504: 
+                    logger.info(f"Received status code of 504 for {year}-{month:02}-{day:02}: Retrying again")
+                    time.sleep(10)
+                    response = requests.get(day_url, params=params)
+                    ret_code = int(response.status_code)
+                    response_text = response.text
+                    soup = BeautifulSoup(response_text, 'html.parser')
+                    parent = [node.get('href').split('=')[1] for node in soup.find_all('a') if node.get('href').endswith(ext)]
+ 
+                print(f"{year}-{month:02}-{day:02} : {len(parent)}")
                 for p in parent:
-                    dir_listing.append(f"http://dapds00.nci.org.au/thredds/fileServer/fj7/Copernicus/Sentinel-3/{p[14:]}")
-                   
-    with open(outfile.as_posix(), "w") as fid:
-        for item in dir_listing:
-            fid.write(f"{item}\n")
-    return outfile        
-             
+                    if "_MAR_" in p:  # only copy the files that is from EUMETSAT
+                        # print(p)
+                        dir_listing.append(f"http://dapds00.nci.org.au/thredds/fileServer/fj7/Copernicus/Sentinel-3/{p[14:]}")
+            with open(year_month_file.as_posix(), "w") as mfid:
+                for item in dir_listing:
+                     mfid.write(f"{item}\n")
     
-def subset_cophub_frp_list(
+    with open(outfile.as_posix(), "w") as outfid:
+        for mfile in outfile.parent.iterdir():
+            if mfile.stem.startswith('monthly'):
+                with open(mfile, 'r') as infid:
+                    for line in infid.readlines():
+                        outfid.write(f"{line}")
+    return outfile  
+
+
+def get_gpd_attrs(
+    aws_access_key_id,
+    aws_secret_access_key,
+    s3_bucket_name,
+    frp_file,
+    s3_folder
+):
+    title = Path(frp_file).name
+    _dt, sensor, relorb = _get_frp_attributes_from_name(title)
+    aws_session = boto3.Session(
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name='ap-southeast-2'
+    )
+    s3_client = aws_session.client('s3')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        xfd_file = Path(tmpdir).joinpath("xfdumanifest.xml")
+        if s3_folder is not None:
+            try:
+                s3_download_file(
+                    s3_bucket_name,
+                    s3_client,
+                    filename="xfdumanifest.xml",
+                    out_dir=Path(tmpdir),
+                    prefix=f"{s3_folder}/{_dt[0:4]}-{_dt[4:6]}-{_dt[6:8]}/{title}"
+                )
+            except FileNotFoundError as err:
+                return None
+        else:
+            xfd_file = download_cophub(frp_file, tmpdir)
+        poly = get_polygon(xfd_file)
+        print(_dt)
+        return {
+            'title': frp_file,
+            'start_date': _dt,
+            'sensor': sensor,
+            'relative_orbit': relorb,
+            'geometry': poly
+        }
+
+    
+def create_cophub_frp_df(
     esa_s3_frp_file: Union[Path, str],
     eumetsat_s3_frp_file: Union[Path, str],
-    cophub_frp_file: Union[Path, str]
+    cophub_frp_file: Union[Path, str],
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    s3_bucket_name: Optional[str] = "s3vtaustralia",
+    nprocs: Optional[int] = 1
 ) -> pd.DataFrame:
-    """Returns the list of EUMETSAT's FRP that has same attributes as ESA's FRP.
+    """Creates GeoDataFrame to hold attributes required to subset cophub datasets.
     
-    :param esa_frp_file: The path to esa's file with FRP products.
-    :param eumetsat_frp_file: The path to eumetsat's file with FRP product.
+    :param esa_s3_frp_file: The path to esa's file with FRP products.
+    :param eumetsat_s3_frp_file: The path to eumetsat's file with FRP product.
     :param cophub_frp_file: The path to Cophub FRP file.
+    :param aws_access_key_id: The AWS_ACCESS_KEY_ID.
+    :param aws_secret_access_key: The AWS_SECERET_ACCESS_KEY
+    :param s3_bucket_name: The name of the s3 bucket.
+    :param nprocs: The number of processor used in parallel processing.
         
     :return:
-        DataFrame with Cophub's FRP attributes that matches the
-        ESA's FRP in s3 listing of ESA but not in eumetsat's s3 listing.
+        Tuple of Cophub, ESA and EUMETSET GeoDataFrame with FRP attributes.
     """
     
     esa_df = pd.read_csv(esa_s3_frp_file, names=['title'], header=None)
@@ -609,95 +775,351 @@ def subset_cophub_frp_list(
     # create new dataframes with attributes needed to match between cophub, esa and eumetsat
     column_names = ["title", "start_date", "sensor", 'relative_orbit']
     
-    
     # populate esa's df attribute
     if not Path(esa_s3_frp_file).with_suffix(".pkl").exists():
-        esa_attrs_df = pd.DataFrame(columns=column_names)
-        for idx, row in esa_df.iterrows():
-            start_dt, sensor, relorb = _get_frp_attributes_from_name(row["title"])
-            esa_attrs_df = esa_attrs_df.append(
-                {
-                    'title': row["title"],
-                    'start_date': start_dt,
-                    'sensor': sensor,
-                    'relative_orbit': relorb
-                },
-                ignore_index=True
+        logger.info("processing ESA FRP GeoDataFrame...")
+        esa_attrs_df = gpd.GeoDataFrame(columns=column_names)
+        esa_frp_files = [row['title'] for _, row in esa_df.iterrows()]
+        with Pool(processes=nprocs) as pool:
+            results = pool.starmap(
+                get_gpd_attrs,
+                [
+                    (
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        s3_bucket_name,
+                        frp_file,
+                        "data"
+                    )
+                    for frp_file in esa_frp_files
+                ],
             )
+        for gpd_attrs in results:
+            esa_attrs_df = esa_attrs_df.append(gpd_attrs, ignore_index=True)
         esa_attrs_df.to_pickle(Path(esa_s3_frp_file).with_suffix(".pkl"))
     else:
-        esa_attrs_df = pd.read_pickle(Path(esa_frp_file).with_suffix(".pkl"))
-        
+        esa_attrs_df = pd.read_pickle(Path(esa_s3_frp_file).with_suffix(".pkl"))
     # populate eumetsat's df attribute
     if not Path(eumetsat_s3_frp_file).with_suffix(".pkl").exists():
-        eu_attrs_df = pd.DataFrame(columns=column_names)
-        for idx, row in eu_df.iterrows():
-            start_dt, sensor, relorb = _get_frp_attributes_from_name(Path(row["title"]).name)
-            eu_attrs_df = eu_attrs_df.append(
-                {
-                    'title': row["title"],
-                    'start_date': start_dt,
-                    'sensor': sensor,
-                    'relative_orbit': relorb
-                },
-                ignore_index=True
+        logger.info("processing EUMETSAT FRP GeoDataFrame...")
+        eu_attrs_df = gpd.GeoDataFrame(columns=column_names)
+        eu_frp_files = [row['title'] for _, row in eu_df.iterrows()]
+        with Pool(processes=nprocs) as pool:
+            results = pool.starmap(
+                get_gpd_attrs,
+                [
+                    (
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        s3_bucket_name,
+                        frp_file,
+                        'eumetsat_data'
+                    )
+                    for frp_file in eu_frp_files
+                ]
             )
+        for gpd_attrs in results:
+            eu_attrs_df = eu_attrs_df.append(gpd_attrs, ignore_index=True)
         eu_attrs_df.to_pickle(Path(eumetsat_s3_frp_file).with_suffix(".pkl"))
     else:
         eu_attrs_df = pd.read_pickle(Path(eumetsat_s3_frp_file).with_suffix(".pkl"))
         
     # populate cophub's df attribute
     if not Path(cophub_frp_file).with_suffix(".pkl").exists():
-        cophub_attrs_df = pd.DataFrame(columns=column_names)
-
-        for idx, row in cophub_df.iterrows():
-            start_dt, sensor, relorb = _get_frp_attributes_from_name(Path(row["title"]).name)
-            cophub_attrs_df = cophub_attrs_df.append(
-                {
-                    'title': row["title"],
-                    'start_date': start_dt,
-                    'sensor': sensor,
-                    'relative_orbit': relorb
-                },
-                ignore_index=True
+        logger.info("processing Cophub FRP GeoDataFrame...")
+        cophub_attrs_df = gpd.GeoDataFrame(columns=column_names)
+        cop_frp_files = [row['title'] for _, row in cophub_df.iterrows()]
+        with Pool(processes=nprocs) as pool:
+            results = pool.starmap(
+                get_gpd_attrs,
+                [
+                    (
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        s3_bucket_name,
+                        frp_file,
+                        None
+                    )
+                    for frp_file in cop_frp_files
+                ]
             )
+        for gpd_attrs in results:
+            if gpt_attrs is not None:
+                cophub_attrs_df = cophub_attrs_df.append(gpd_attrs, ignore_index=True)
         cophub_attrs_df.to_pickle(Path(cophub_frp_file).with_suffix(".pkl"))
     else:
         cophub_attrs_df = pd.read_pickle(Path(cophub_frp_file).with_suffix(".pkl"))
+    
+    return cophub_attrs_df, esa_attrs_df, eu_attrs_df
+
+
+def subset_cophub_from_esa(
+    esa_df: gpd.GeoDataFrame,
+    cop_df: gpd.GeoDataFrame,
+    outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
+    save_file: Optional[bool] = True
+) -> gpd.GeoDataFrame:
+    """Subsets Cophub list based on the ESA list if their Geometry(Footprint) intersects
+       for a given day.
+    
+    :param esa_df: The GeoDataFrame with attributes for ESA S3 listing.
+    :param cop_df: The GeoDataFrame with attributes for Cophub(NCI) file listing.
+    :param save_file: Flag to save the subset download list of not.
+    
+    :return:
+        GeoDataFrame with Cophub FRP product footprint that intersects with ESA FRP
+        footprint for a given day.
+    """
+    # convert datetime string to datetime stamp
+    esa_df['start_date'] = pd.to_datetime(esa_df["start_date"], format="%Y%m%dT%H%M%S")
+    cop_df['start_date'] = pd.to_datetime(cop_df["start_date"], format="%Y%m%dT%H%M%S")
+    
+    # assign crs to GeoDataFrame
+    esa_df.crs = 'EPSG:4326'
+    cop_df.crs = 'EPSG:4326'
+    
+    esa_df['date'] = pd.to_datetime(esa_df['start_date']).dt.date
+    cop_df['date'] = pd.to_datetime(cop_df['start_date']).dt.date
+    
+    
+    column_names = ["title", "start_date", "sensor", 'relative_orbit', 'geometry']
+    cop_download_df = gpd.GeoDataFrame(columns=column_names)
+    for idx_esa, esa_row in esa_df.iterrows():
+        cophub_df_subset = cop_df[cop_df['date'][:] == esa_row['date']].copy()
+        cophub_df_subset['intersects'] = False
+        esa_geom = esa_row['geometry'].buffer(0)
+        for idx_cop, cop_row in cophub_df_subset.iterrows():
+            cop_geom = cop_row['geometry'].buffer(0)
+            if esa_geom.intersects(cop_geom):
+                cop_download_df = cop_download_df.append(
+                    {
+                        'title': cop_row["title"],
+                        'start_date': cop_row['start_date'],
+                        'sensor': cop_row['sensor'],
+                        'relative_orbit': cop_row['relative_orbit'],
+                        'geometry': cop_row['geometry'],
+                        'esa_geometry': esa_row['geometry']
+                    },
+                    ignore_index=True
+                )
+    subset_cop_download_df = cop_download_df.drop_duplicates(['title'])
+    if save_file:
+        subset_cop_download_df.to_csv(outdir.joinpath('cophub_download_list.csv'))
+    return subset_cop_download_df
+
+
+def generate_hotspot_geojson(
+    download_url: Union[Path, str],
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    s3_bucket_name: str,
+    s3_upload: Optional[bool] = False
+):
+    aws_session = boto3.Session(
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name='ap-southeast-2'
+    )
+    s3_client = aws_session.client('s3')
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            xml_frp_file = download_cophub(download_url, tmpdir)  # this returns the full path to .xml file. 
+            _frp_dir = Path(xml_frp_url).parent  # the parent parth to xml_frp_file is .SEN3 folder
+            _frp_name = Path(xml_frp_url).name
+            acq_date = re.findall(r"[0-9]{8}T[0-9]{6}" , _frp_name)[0]
+            _frp_dir_name = f"eumetsat_data/{acq_date[0:4]}-{acq_date[4:6]}-{acq_date[6:8]}" # directory to store the eumetsat's .geojson files for processing
+            for item in Path(_frp_dir).iterdir():
+                if s3_upload:
+                    s3_upload_file(
+                        item,
+                        s3_client,
+                        s3_bucket_name,
+                        prefix=f"{_frp_dir_name}/{_frp_name}"
+                    )
+                if item.name == "FRP_in.nc":
+                    gpd_hotspotfile = _frp_dir.with_suffix(".FRP.geojson")
+                    s3hotspotsgpd = IPF_FRP_read(item)
+                    if len(s3hotspotsgpd) > 0:
+                        s3hotspotsgpd.to_file(gpd_hotspotfile, driver='GeoJSON')
+                        if s3_upload:
+                            print(gpd_hotspotfile)
+                            s3_upload_file(gpd_hotspotfile, s3_client, s3_bucket_name, prefix=_frp_dir_name)
+        return download_url
+    except Exeption as err:
+        logger.info(f"failed to process {download_url}: {err}")
+        return None
+   
+
+def process_cophub_subset(
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    esa_s3_frp_file: Optional[Union[Path, str]] = None,
+    eumetsat_s3_frp_file: Optional[Union[Path, str]] = None,
+    cophub_frp_file: Optional[Union[Path, str]] = None,
+    output_dir: Union[Path, str] = Path(os.getcwd()).joinpath('data'),
+    s3vt_s3_bucket_name: Optional[str] = 's3vtaustralia',
+    start_year: Optional[int] = 2020,
+    end_year: Optional[int] = 2020,
+    nprocs: Optional[int] = 1
+):
+    """Main processing pipeline to subset Cophub datasets to ESA equivalent in S3
+    
+    :param aws_access_key_id: The AWS_ACCESS_KEY_ID.
+    :param aws_secret_access_key: The AWS_SECERET_ACCESS_KEY
+    :param esa_s3_frp_file: The .csv file containing the list of ESA FRP product.
+    :param eumetsat_s3_frp_file: The .csv file containing the list of EUMETSAT FRP product.
+    :param cophub_frp_file: The .csv file containing the list of Cophub FRP product.
+    :param output_dir: The output directory to store the files generated from this process.
+    :param s3vt_s3_bucket_name: The s3 bucket name where FRP product resides.
+    :param start_year: The start year to limit the FRP list from Cophub.
+    :param end_year: The end year to limit the FRP list from Cophub.
+    :param nprocs: The number of processor used in parallel processing.
+
+    """
+    if not output_dir.exists():
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-    esa_attrs_df["start_date"] = pd.to_datetime(esa_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
-    eu_attrs_df["start_date"] = pd.to_datetime(eu_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
-    cophub_attrs_df["start_date"] = pd.to_datetime(cophub_attrs_df["start_date"], format="%Y%m%dT%H%M%S")
-
-    # perform merge of eumetsat's df and esa's df for common start_date, sensor
-    # and relative orbit attributes.
-    cophub_esa_common_attrs_df = cophub_attrs_df.merge(
+    try:
+        if (aws_access_key_id is not None) & (aws_secret_access_key is not None):
+            aws_session = boto3.Session(
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                region_name='ap-southeast-2'
+            )
+        else:
+            aws_session = boto3.Session(region_name='ap-southeast-2')
+    except Exception:
+        logger.info("failed to initialize aws session")
+        sys.exit(0)
+    
+    # generate esa s3 listing if the file does not exist
+    if esa_s3_frp_file is not None:
+        if Path(esa_s3_frp_file).exists():
+            logger.info(f"Using ESA FRP listing from {str(esa_s3_frp_file)}")
+        else:
+            logger.info(f"Generating ESA FRP listing from {s3vt_s3_bucket_name} at {str(esa_s3_frp_file)}")
+            esa_s3_sen3_frp_list_file = _get_esa_s3_listing(
+                aws_access_key_id,
+                aws_secret_access_key,
+                s3vt_s3_bucket_name,
+                esa_s3_frp_file,
+                exclude_s3_key='eumetsat_data/',  # this key is to exclude the s3 folder where eumetsat's FRP product resides.
+                match_suffix='.SEN3'
+            )
+    else:
+        esa_s3_frp_file = Path(output_dir).joinpath("esa_s3_frp_sen3_list.csv")
+        logger.info(f"Generating ESA FRP listing from {s3vt_s3_bucket_name} at {str(esa_s3_frp_file)}")
+        esa_s3_sen3_frp_list_file = _get_esa_s3_listing(
+            aws_access_key_id,
+            aws_secret_access_key,
+            s3vt_s3_bucket_name,
+            esa_s3_frp_file,
+            exclude_s3_key='eumetsat_data/',  # this key is to exclude the s3 folder where eumetsat's FRP product resides.
+            match_suffix='.SEN3'
+        )
+    
+    # generate eumetsat FRP s3 listing if the file does not exist
+    if eumetsat_s3_frp_file is not None:
+        if Path(eumetsat_s3_frp_file).exists():
+            logger.info(f"Using EUMETSAT FRP listing from {str(eumetsat_s3_frp_file)}")
+        else:
+            logger.info(f"Generating EUMETSAT FRP listing from {s3vt_s3_bucket_name} at {str(eumetsat_s3_frp_file)}")
+            eumetsat_s3_frp_file = _get_eumetsat_s3_listing(
+                aws_access_key_id,
+                aws_secret_access_key,
+                s3vt_s3_bucket_name,
+                eumetsat_s3_frp_file,
+                exclude_s3_key='data/', # key to exlude s3 bucket where esa's FRP are stored.
+                match_suffix='.SEN3'
+            )
+    else:
+        eumetsat_s3_frp_file = Path(output_dir).joinpath("eumetsat_s3_frp_sen3_list.csv")
+        logger.info(f"Generating EUMETSAT FRP listing from {s3vt_s3_bucket_name} at {str(eumetsat_s3_frp_file)}")
+        eumetsat_s3_frp_file = _get_eumetsat_s3_listing(
+            aws_access_key_id,
+            aws_secret_access_key,
+            s3vt_s3_bucket_name,
+            eumetsat_s3_frp_file,
+            exclude_s3_key='data/', # key to exlude s3 bucket where esa's FRP are stored.
+            match_suffix='.SEN3'
+        )
+    
+    # generate Cophub FRP listing if the file does not exist
+    if cophub_frp_file is not None:
+        if Path(cophub_frp_file).exists():
+            logger.info(f"Using Cophub FRP listing from {str(cophub_frp_file)}")
+        else:
+            logger.info(f"Generating Cophub FRP listing from http://dapds00.nci.org.au/ at {str(cophub_frp_file)}")
+            _get_cophub_frp_listing(
+                'http://dapds00.nci.org.au',
+                '.zip',
+                None,
+                start_year,
+                end_year,
+                cophub_frp_file
+            )
+    else:
+        cophub_frp_file = Path(output_dir).joinpath("cophub_frp_list.csv")
+        logger.info(f"Generating Cophub FRP listing from http://dapds00.nci.org.au/ at {str(cophub_frp_file)}")
+        _get_cophub_frp_listing(
+            'http://dapds00.nci.org.au',
+            '.zip',
+            None,
+            start_year,
+            end_year,
+            cophub_frp_file
+        )
+    
+    # create GeoDataFrame with required attributes to enable subset.
+    # This step needs to be run in parallel because it takes a while to 
+    # create a dafaframe because files from its xml file with metadata 
+    # from the source needs to be downloaded to extract geospatial footprint.
+    logger.info("Generating a GeoDataFrame for ESA, EUMETSAT and Cophub FRP...")
+    # s3_client = aws_session.client("s3")
+    cophub_attrs_df, esa_attrs_df, eu_attrs_df = create_cophub_frp_df(
+        esa_s3_frp_file,
+        eumetsat_s3_frp_file,
+        cophub_frp_file,
+        aws_access_key_id,
+        aws_secret_access_key,
+        s3_bucket_name=s3vt_s3_bucket_name,
+        nprocs=nprocs
+    )
+    
+    # subsetting the Cophub data to that of ESA
+    logger.info("Subsetting Cophub FRP...")
+    subset_cop_download_df = subset_cophub_from_esa(
         esa_attrs_df,
-        how="inner",
-        on=["start_date", "sensor", "relative_orbit"]
+        cophub_attrs_df,
+        output_dir
     )
     
-    print(cophub_esa_common_attrs_df)
-    
-    # merge cophub_esa_common with eumetsat's on `outer` join
-    cophub_outer_df = cophub_esa_common_attrs_df.merge(
-        eu_attrs_df,
-        how='outer',
-        indicator=True,
-        on=["start_date", "sensor", "relative_orbit"]
-    )
-    
-    # get cophub's df where there is no common attrs with eumetsat's attrs
-    cophub_subset = cophub_outer_df[cophub_outer_df['_merge']=='left_only']
-    
-    print(cophub_subset)
-    return cophub_subset
-
-
+    # process the .geojson file and upload to S3 if s3_upload is True.
+    s3_upload = True # set to True if files are to be uploaded to s3
+    cop_download_list = [row['title'] for row in subset_cop_download_df.iterrows()]
+    with Pool(processes=nprocs) as pool:
+        results = pool.starmap(
+            generate_hotspot_geojson,
+            [
+                (
+                    frp_url,
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    s3_bucket_name,
+                    s3_upload=s3_upload
+                )
+                for frp_url in cop_download_list
+            ]
+        )
+        for res in results:
+            if res is not None:
+                with open(Path(output_dir).joinpath("cophub_hotspot_completed.csv")) as fid:
+                    fid.writeline(str(res))
+                    
+        
 if __name__ =='__main__':
-    # get_cophub_frp_listing()
-    subset_cophub_frp_list(
-        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/esa_s3_frp_sen3_list.csv',
-        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/eumetsat_s3_frp_sen3_list.csv',
-        '/home/jovyan/s3vt_eumetsat/s3vtdata/workdir_s3vt/eumetsat_s3_frp_sen3_list.csv'
+    process_cophub_subset(
+        'AKIAUOKIEWE3IPCUWZXS',
+        'lg9aZcDAafaZ1zBchJsVNjd9I5YQTigEmc6UY26W',
+        nprocs=16
     )
