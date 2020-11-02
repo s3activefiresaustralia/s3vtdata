@@ -22,7 +22,6 @@ import zipfile
 
 from shapely.geometry import Polygon
 
-import xmltodict
 from netCDF4 import Dataset
 import pandas as pd
 import geopandas as gpd
@@ -35,7 +34,8 @@ import numpy as np
 
 
 logger.basicConfig(format='%(levelname)s:%(message)s', level=logger.INFO)
-
+count_number = 0
+total_counts = 0
 
 class DummyPool:
     def __enter__(self):
@@ -711,8 +711,11 @@ def get_gpd_attrs(
     s3_bucket_name,
     frp_file,
     s3_folder,
-    status: Optional[str] = None
 ):
+    global count_number
+    global total_counts
+    count_number += 16
+    print(f"processing {count_number} of {total_counts}")
     title = Path(frp_file).name
     _dt, sensor, relorb = _get_frp_attributes_from_name(title)
     aws_session = boto3.Session(
@@ -722,8 +725,6 @@ def get_gpd_attrs(
     )
     s3_client = aws_session.client('s3')
     with tempfile.TemporaryDirectory() as tmpdir:
-        if status is not None:
-            print(status)
         xfd_file = Path(tmpdir).joinpath("xfdumanifest.xml")
         if s3_folder is not None:
             try:
@@ -770,6 +771,7 @@ def create_cophub_frp_df(
     :return:
         Tuple of Cophub, ESA and EUMETSET GeoDataFrame with FRP attributes.
     """
+    global total_counts
     
     esa_df = pd.read_csv(esa_s3_frp_file, names=['title'], header=None)
     eu_df = pd.read_csv(eumetsat_s3_frp_file, names=['title'], header=None)
@@ -832,6 +834,7 @@ def create_cophub_frp_df(
         logger.info("processing Cophub FRP GeoDataFrame...")
         cophub_attrs_df = gpd.GeoDataFrame(columns=column_names)
         cop_frp_files = [row['title'] for _, row in cophub_df.iterrows()]
+        total_counts = len(cop_frp_files)
         with Pool(processes=nprocs) as pool:
             results = pool.starmap(
                 get_gpd_attrs,
@@ -841,10 +844,9 @@ def create_cophub_frp_df(
                         aws_secret_access_key,
                         s3_bucket_name,
                         frp_file,
-                        None,
-                        f"processing {idx} of {len(cop_frp_files)}",
+                        None
                     )
-                    for idx, frp_file in enumerate(cop_frp_files[0:1000])
+                    for idx, frp_file in enumerate(cop_frp_files)
                 ]
             )
         for gpd_attrs in results:
@@ -919,7 +921,19 @@ def generate_hotspot_geojson(
     s3_bucket_name: str,
     s3_upload: Optional[bool] = False,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()).joinpath("COPHUB_GEOJSON")
-):
+) -> Union[Path, str]:
+    """Generates FRP geojson and uploads to s3-bucker if s3_upload is set to True.
+    
+    :param download_url: The url to a FRP file, nci cophub site.
+    :param aws_access_key_id: The AWS_ACCESS_KEY_ID with privilage to upload to s3-bucket if s3_upload is True.
+    :param aws_secret_access_key: THE AWS_SECRET_ACCESS_KEY with privileges to upload.
+    :param s3_bucket_name: The name of the s3-bucket to upload data.
+    :param s3_upload: The flag to set if upload to s3 bucket.
+    :param outdir: The directory to save .geojson file in local file system.
+    
+    :return:
+        The url of the downloaded FRP file.
+    """
     aws_session = boto3.Session(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,
@@ -928,9 +942,10 @@ def generate_hotspot_geojson(
     s3_client = aws_session.client('s3')
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            xml_frp_file = download_cophub(download_url, tmpdir)  # this returns the full path to .xml file. 
+            xml_frp_url = download_cophub(download_url, tmpdir)  # this returns the full path to .xml file. 
             _frp_dir = Path(xml_frp_url).parent  # the parent parth to xml_frp_file is .SEN3 folder
-            _frp_name = Path(xml_frp_url).name
+            _frp_name = Path(xml_frp_url).parent.name
+    
             acq_date = re.findall(r"[0-9]{8}T[0-9]{6}" , _frp_name)[0]
             _frp_dir_name = f"eumetsat_data/{acq_date[0:4]}-{acq_date[4:6]}-{acq_date[6:8]}" # directory to store the eumetsat's .geojson files for processing
             for item in Path(_frp_dir).iterdir():
@@ -952,10 +967,10 @@ def generate_hotspot_geojson(
                         outdir.joinpath(_frp_dir_name).mkdir(parents=True, exist_ok=True)
                         shutil.move(gpd_hotspotfile.as_posix(), f"{outdir.as_posix()}/{_frp_dir_name}/{gpd_hotspotfile.name}")
         return download_url
-    except Exeption as err:
+    except Exception as err:
         logger.info(f"failed to process {download_url}: {err}")
         return None
-   
+
 
 def process_cophub_subset(
     aws_access_key_id: str,
@@ -1094,16 +1109,20 @@ def process_cophub_subset(
     )
     
     # subsetting the Cophub data to that of ESA
-    logger.info("Subsetting Cophub FRP...")
-    subset_cop_download_df = subset_cophub_from_esa(
-        esa_attrs_df,
-        cophub_attrs_df,
-        output_dir
-    )
-    print(subset_cop_download_df)
+    cophub_subset_file = output_dir.joinpath('cophub_download_list.csv')
+    if not cophub_subset_file.exists():
+        logger.info("Subsetting Cophub FRP...")
+        subset_cop_download_df = subset_cophub_from_esa(
+            esa_attrs_df,
+            cophub_attrs_df,
+            output_dir
+        )
+    else:
+        logger.info(f"Reading cophub subset from {cophub_subset_file}")
+        subset_cop_download_df = pd.read_csv(cophub_subset_file)
     # process the .geojson file and upload to S3 if s3_upload is True.
     s3_upload = False # set to True if files are to be uploaded to s3
-    cop_download_list = [row['title'] for row in subset_cop_download_df.iterrows()]
+    cop_download_list = [row['title'] for _, row in subset_cop_download_df.iterrows()]
     with Pool(processes=nprocs) as pool:
         results = pool.starmap(
             generate_hotspot_geojson,
@@ -1112,7 +1131,7 @@ def process_cophub_subset(
                     frp_url,
                     aws_access_key_id,
                     aws_secret_access_key,
-                    s3_bucket_name,
+                    s3vt_s3_bucket_name,
                     s3_upload
                 )
                 for frp_url in cop_download_list
@@ -1126,7 +1145,7 @@ def process_cophub_subset(
         
 if __name__ =='__main__':
     process_cophub_subset(
-        'AKIAUOKIEWE3IPCUWZXS',
-        'lg9aZcDAafaZ1zBchJsVNjd9I5YQTigEmc6UY26W',
+        aws_access_key_id,
+        aws_secret_access_key,
         nprocs=16
     )
