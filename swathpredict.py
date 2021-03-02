@@ -42,36 +42,36 @@ def getredtoblack(number):
         numbercolours = 256
     else:
         numbercolours = number
-        
+
     rangevalue = int((numbercolours)/4)
-    
+
     if number == 1:
         return(['red'])
     if number == 2:
         return(['red', 'black'])
-    
+
     red = Color("red")
     orange = Color("orange")
     yellow = Color("yellow")
     white = Color("white")
     black = Color("black")
-    
+
     redorange = tuple(red.range_to(orange, rangevalue))
     orangeyellow = tuple(orange.range_to(yellow, rangevalue+1))
     yellowwhite = tuple(yellow.range_to(white,rangevalue+1))
     whiteblack = tuple(white.range_to(black,rangevalue+1))
     redtoblack = redorange + orangeyellow[1:] + yellowwhite[1:] + whiteblack[1:]
-    
+
     redtoblacklist = list(redtoblack)
     colours = []
     position = 0
     increment = int(len(redtoblacklist)/(number-1))
-    
+
     while (position < len(redtoblacklist)):
 
         colours.append(redtoblacklist[position])
         position = position + increment
-    colours[len(colours)-1] = black   
+    colours[len(colours)-1] = black
     return(colours)
 
 
@@ -113,7 +113,7 @@ def get_tles():
             download_file(url)
             logging.info("Downloading URL from configuration sources:" + tle_file_basename)
         except OSError:
-            logging.info("Process could not download file:" + tle_file_basename)
+            logging.error("Process could not download file:" + tle_file_basename)
             return ()
 
     with open('tles.txt', 'w') as outfile:
@@ -145,7 +145,7 @@ def check_tle_is_current():
         tle_retrieve_time = datetime.fromtimestamp(os.path.getmtime('tles.txt'))
     else:
         get_tles()
-        logging.info('tle.txt does not exist')
+        logging.debug('tle.txt does not exist')
         tle_retrieve_time = datetime.utcnow()
 
     # check for stale tle and update if required
@@ -158,7 +158,7 @@ def check_tle_is_current():
         logging.info("Stale TLE detected and replaced at" + str(tle_retrieve_time))
     else:
         logging.info("TLE file current and does not require update")
-    logging.info("HH:MM:SS since TLE retrieval:"+ str(tle_timesinceretrieve))
+    logging.debug("HH:MM:SS since TLE retrieval:"+ str(tle_timesinceretrieve))
     return clean_combine_tles()
 
 def update_points_crossing_antimeridian(listofpoints):
@@ -168,7 +168,7 @@ def update_points_crossing_antimeridian(listofpoints):
     antimeridianlistofpoints = []
     diff = 325.0
     referencepointlon = listofpoints[0]['lon2']
-    
+
     crossingeasttowest = False
     for point in listofpoints:
         # Confirm no crossing of antimeridian between points
@@ -180,18 +180,18 @@ def update_points_crossing_antimeridian(listofpoints):
             if ((referencepointlon - point['lon2']) >= diff):
                 point['lon2'] = point['lon2']+360
                 antimeridianlistofpoints.append(point)
-                referencepointlon = point['lon2'] 
+                referencepointlon = point['lon2']
             # if crossing antimeridian east to west minus 360 i.e. diff will be negative
-            if ((referencepointlon - point['lon2']) <= (diff*-1)):        
+            if ((referencepointlon - point['lon2']) <= (diff*-1)):
                 point['lon2'] = point['lon2']-360
                 antimeridianlistofpoints.append(point)
-                referencepointlon = point['lon2'] 
+                referencepointlon = point['lon2']
                 # Crossing east to west
                 crossingeasttowest = True
     if crossingeasttowest == True:
         for point in antimeridianlistofpoints:
             point['lon2'] = point['lon2']+360
-        
+
     return(antimeridianlistofpoints)
 
 
@@ -212,7 +212,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
     ogr.UseExceptions()
 
     driver = ogr.GetDriverByName(ogr_format)
-    
+
     if os.path.exists(ogr_output):
         driver.DeleteDataSource(ogr_output)
     ds = driver.CreateDataSource(ogr_output)
@@ -226,7 +226,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         geomtype = ogr.wkbPoint
 
     if ds is None:
-        logging.info("Process could not create file")
+        logging.error("Process could not create file")
         sys.exit(1)
     layer = ds.CreateLayer(attributes['Satellite name'], geom_type=geomtype)
 
@@ -280,7 +280,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
     feature.SetField('Node                         :', attributes['Node'])
 
 
-    
+
     if poly_or_line == 'point':
         point = ogr.Geometry(ogr.wkbPoint)
         for x in input_points:
@@ -290,15 +290,15 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         layer.CreateFeature(feature)
 
         point.Destroy()
-    
-    
-    
+
+
+
     if poly_or_line == 'line':
         line = ogr.Geometry(type=ogr.wkbLineString)
         for x in input_points:
-      
-            
-           
+
+
+
             line.AddPoint(x['lon2'], x['lat2'], x['alt2'])
 
         feature.SetGeometry(line)
@@ -307,20 +307,20 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         line.Destroy()
 
     if poly_or_line == 'polygon':
-        
+
         ring = ogr.Geometry(ogr.wkbLinearRing)
-        
+
         #input_points = update_points_crossing_antimeridian(input_points, ogr_format, 'antimeridian.geojson')
         for x in input_points:
-   
+
             ring.AddPoint(x['lon2'], x['lat2'])
-                        
+
         poly = ogr.Geometry(ogr.wkbPolygon)
         ring.color = "red"
-        
+
         poly.AddGeometry(ring)
-        
-        
+
+
         feature.SetGeometry(poly)
 
         layer.CreateFeature(feature)
@@ -329,7 +329,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         poly.Destroy()
 
     feature.Destroy()
-   
+
     ds.Destroy()
     # for KML - Add altitude to GeoJSON if ogr_format=="GeoJSON" and change colour of track to yellow
     if ogr_format == "GeoJSON":
@@ -405,43 +405,43 @@ def folium_timespan_geojson_html(schedule, satname):
     lines=[]
     polygons = []
     #polygontuples = ()
-    
+
     colorindex = 0
-    
+
     colorlut = getredtoblack(len(schedule)+1)
 
     for i in schedule:
-        
+
         pointlist = []
         polygonlist = []
         #timeslist = []
         datelist = []
-        for x in i['Orbit line']: 
+        for x in i['Orbit line']:
             pointlist.append([x['lon2'], x['lat2']])
             datelist.append(str(x['time']).replace(" ","T"))
-            
+
             # folium expects a time for each point - could use iterate for len of points and time period to get times per point - or add to dict from original function which uses time
         lines.append({'coordinates': pointlist, 'dates': datelist, 'color': str(colorlut[colorindex]),'weight': 2})
-        
-        datelist = []  
-            
+
+        datelist = []
+
         for x in i['Swath polygon']:
             #polygonlist.append([x['lat2'],x['lon2']])
             pointtuple = (x['lon2'],x['lat2'])
             polygonlist.append(pointtuple)
-            
+
             datelist.append(str(x['time']).replace(" ","T"))
-        
+
         polygons.append({'coordinates': [(tuple(polygonlist),)], 'dates': datelist, 'color': str(colorlut[colorindex]),'weight': 2})
         colorindex = colorindex +1
-    
-    
+
+
     features = [
         {
             'type': 'Feature',
             'geometry': {
                 'type': 'MultiPolygon',
-                'coordinates': polygon['coordinates'],            
+                'coordinates': polygon['coordinates'],
             },
             'properties': {
                 'times': polygon['dates'],
@@ -449,16 +449,16 @@ def folium_timespan_geojson_html(schedule, satname):
                     'color': polygon['color'],
                     'opacity': 0.1,
                     'weight': polygon['weight'] if 'weight' in polygon else 5
-                    
+
                 }
             }
         }
-        
+
         #for line in lines
-        for polygon in polygons 
+        for polygon in polygons
     ]
-    
-    
+
+
     featureslines = [
         {
             'type': 'Feature',
@@ -472,33 +472,33 @@ def folium_timespan_geojson_html(schedule, satname):
                     'color': line['color'],
                     'dash-array': '[4]',
                     'weight': line['weight'] if 'weight' in line else 5
-                
+
                 }
             }
         }
-        
+
         for line in lines
-        #for polygon in polygons 
+        #for polygon in polygons
     ]
-    
-    
-    
+
+
+
     for featureline in featureslines:
         features.append(featureline)
-    
-    
+
+
     plugins.TimestampedGeoJson({
         'type': 'FeatureCollection',
         'features': features,
     }, period='PT1M', duration=None,add_last_point=False, auto_play=True, transition_time=1, time_slider_drag_update=True).add_to(timespan_map)
-    
+
     plugins.Fullscreen(
         position='topright',
         title='Expand me',
         title_cancel='Exit me',
         force_separate_button=True
     ).add_to(timespan_map)
-    
+
     timespan_map
 
 
@@ -508,31 +508,31 @@ def folium_timespan_geojson_html(schedule, satname):
 
     colorindex = 0
     for i in schedule:
-        
+
         pointlist = []
         polygonlist = []
         #timeslist = []
         datelist = []
-        for x in i['Orbit line']: 
+        for x in i['Orbit line']:
             pointlist.append([x['lon2'], x['lat2']])
             datelist.append(str(x['time']).replace(" ","T"))
-            
+
             # folium expects a time for each point - could use iterate for len of points and time period to get times per point - or add to dict from original function which uses time
         polygons.append({'coordinates': pointlist, 'dates': datelist, 'color': colorlut[colorindex],'weight': 2})
         colorindex = colorindex +1
         datelist = []
-    
+
         for x in i['Swath polygon']:
             #polygonlist.append([x['lat2'],x['lon2']])
             pointtuple = (x['lon2'],x['lat2'])
             polygonlist.append(pointtuple)
-            
+
             datelist.append(str(x['time']).replace(" ","T"))
-        
+
         polygons.append({'coordinates': [(tuple(polygonlist),)], 'dates': datelist, 'color': colorlut[colorindex],'weight': 2})
         #colorindex = colorindex +1
-    #print(polygonlist)  
-    
+    #print(polygonlist)
+
     features = [
         {
             'type': 'Feature',
@@ -540,7 +540,7 @@ def folium_timespan_geojson_html(schedule, satname):
                 #'type': 'LineString',
                 #'coordinates': line['coordinates'],
                 'type': 'MultiPolygon',
-                'coordinates': polygon['coordinates'],            
+                'coordinates': polygon['coordinates'],
             },
             'properties': {
                 #'times': line['dates'],
@@ -550,24 +550,24 @@ def folium_timespan_geojson_html(schedule, satname):
                 'times': polygon['dates'],
                 'style': {
                      'color': polygon['color'],
-                     'weight': polygon['weight'] if 'weight' in polygon else 5           
-                
-                
-                
+                     'weight': polygon['weight'] if 'weight' in polygon else 5
+
+
+
                 }
             }
         }
         #for line in lines
         for polygon in polygons
     ]
-    
+
     #print(features)
-    
+
     #plugins.TimestampedGeoJson({
     #    'type': 'FeatureCollection',
     #    'features': features,
     #}, period='PT1M', duration=None,add_last_point=False, auto_play=True, transition_time=1).add_to(timespan_map)
- 
+
     style_function = lambda x: {'fillColor': '#00ffff'}
     gj = folium.GeoJson({
         'type': 'FeatureCollection',
@@ -579,14 +579,14 @@ def folium_timespan_geojson_html(schedule, satname):
     #                                           "Acquisition of Signal Local    :", "Acquisition of Signal UTC    :", \
     #                                           "Loss of Signal UTC           :", "Transit time                 :", \
     #                                           "Node                         :"]))
-    
-    gj.add_to(timespan_map)    
+
+    gj.add_to(timespan_map)
     #timespan_map.add_child(folium.GeoJsonTooltip(fields=["Satellite               :", "Sensor               :", \
     #                                           "Orbit height                 :", "Orbit number                 :", \
     #                                           "Acquisition of Signal Local    :", "Acquisition of Signal UTC    :", \
     #                                           "Loss of Signal UTC           :", "Transit time                 :", \
     #                                           "Node                         :"]))
-    
+
     plugins.Fullscreen(
         position='topright',
         title='Expand me',
@@ -621,10 +621,10 @@ def to_datetime(ephemtime):
     """Return datetime object from input ephem time"""
     try:
         stringtime = (datetime.strptime(str(ephemtime), "%Y/%m/%d %H:%M:%S"))
-    
+
     except ValueError:
         stringtime = (datetime.strptime(str(ephemtime), "%Y-%m-%d %H:%M:%S"))
-    
+
     return (stringtime)
 
 
@@ -638,17 +638,17 @@ def get_satellite_name(tle):
 def get_orbit_node(aos_lat, los_lat, oi):
     """Return the orbit node - ascending or descending, based on time of AOS and LOS latitude """
     if (aos_lat > los_lat):
-        print("PASS                 = descending")
+        logging.debug("PASS                 = descending")
         node = "descending"
     else:
-        print("PASS                 = ascending")
+        logging.debug("PASS                 = ascending")
         node = "ascending"
         oi = 360 - oi
     return (oi, node)
 
 
 def get_subsat_oneincrement(sat, deltatime, timestep):
-    """Return to sub satellite latitude and longitude of the next satellite position"""    
+    """Return to sub satellite latitude and longitude of the next satellite position"""
     deltatime = deltatime + timestep
     sat.compute(deltatime)
     subsatlat1 = sat.sublat.real * (180 / math.pi)
@@ -668,7 +668,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
     schedule = []
     observer.date = passes_begin_time
 
-    print("---------------------------------------")
+    logging.debug("---------------------------------------")
 
     for tle in tles:
 
@@ -683,9 +683,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
             now = datetime.utcnow()
             timesinceepoch = now - twole.epoch.astype(datetime)
 
-            print("TLE EPOCH:", twole.epoch.astype(datetime))
-            print("TLE age:", timesinceepoch)
-            print("---------------------------------------")
+            logging.debug("TLE EPOCH:", twole.epoch.astype(datetime))
+            logging.debug("TLE age:", timesinceepoch)
+            logging.debug("---------------------------------------")
 
             # While lostime of next pass is less than or equal to pass_begin_time + period do something
             lostime = start  # passes_begin_time + passes_period
@@ -699,7 +699,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                 # Confirm that observer details have been computed i.e. are not 'Null'
 
                 if rt is None:
-                    print(rt + "is none")
+                    logging.debug(rt + "is none")
                     logging.info("Rise time of satellite not calculated - pass currently under way")
                     observer.date = (lostime + timedelta(minutes=90))
 
@@ -727,15 +727,15 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                     tag = repo.tags[len(repo.tags)-1].tag.tag # TODO work out if git repo, if not skip TRY
                 except:
                     tag = '0.0.0'
-                print("code tag             = ", tag)
-                print("------------------------------------------")
-                print("Satellite            = ", satname)
-                print("Orbit                = ", orbitnumber)
-                print("Minutes to horizon   = ", minutesaway)
-                print("AOStime local        = ", loctime)
-                print("AOStime UTC          = ", to_datetime(rt))
-                print("LOStime UTC          = ", to_datetime(st))
-                print("Transit time UTC     = ", to_datetime(tt))
+                logging.debug("code tag             = ", tag)
+                logging.debug("------------------------------------------")
+                logging.debug("Satellite            = ", satname)
+                logging.debug("Orbit                = ", orbitnumber)
+                logging.debug("Minutes to horizon   = ", minutesaway)
+                logging.debug("AOStime local        = ", loctime)
+                logging.debug("AOStime UTC          = ", to_datetime(rt))
+                logging.debug("LOStime UTC          = ", to_datetime(st))
+                logging.debug("Transit time UTC     = ", to_datetime(tt))
 
                 SWATH_FILENAME = os.path.join(output_path, satname + "." + str(
                     orbitnumber) + "." + ground_station_name + ".orbit_swath.geojson")
@@ -760,25 +760,25 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                     #    subsatlat1 = sat.sublat.real * (180 / math.pi)
                     #    subsatlon1 = sat.sublong.real * (180 / math.pi)
                     #    print("got to here")
-                    
+
                     sat.compute(deltatime)
-                    
+
                     subsatlat = sat.sublat.real * (180 / math.pi)
                     subsatlon = sat.sublong.real * (180 / math.pi)
-                    
+
                     orbaltitude = orb.get_lonlatalt(to_datetime(rt))[2] * 1000
 
                     geotrack.append(
                         {'lat2': subsatlat, 'lon2': subsatlon,
                          'alt2': orbaltitude, 'time': str(deltatime)})
-                    
+
                     # Original heading calculation
                     #effectiveheading = get_effective_heading(sat, oi, subsatlat,
                     #                                       subsatlon, orad, sat._n)
 
                     # TODO Alternate simple heading
                     subsatlat1, subsatlon1 = get_subsat_oneincrement(sat, deltatime, timestep)
-                    
+
                     effectiveheading = Geodesic.WGS84.Inverse(subsatlat1, subsatlon1, subsatlat, subsatlon)['azi1']
 
                     eastaz = effectiveheading + 90
@@ -799,11 +799,11 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                     if startpoint is True:
                         # Step from sub satellite point to limb of swath with increasing step size
                         while math.pow(incrementtoswath, 5) < swath:
-                            
+
                             geoeastpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, math.pow(incrementtoswath, 5))
                             geoeastpointdict['time']=str(deltatime)
                             geoeastpoint.append(geoeastpointdict)
-                            
+
                             geowestpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, math.pow(incrementtoswath, 5))
                             geowestpointdict['time']=str(deltatime)
                             geowestpoint.append(geowestpointdict)
@@ -813,9 +813,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                     geoeastpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, swath)
                     geoeastpointdict['time']=str(deltatime)
                     geoeastpoint.append(geoeastpointdict)
-                    
+
                     # Trace the western limb of the swath
-                    
+
                     geowestpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, swath)
                     geowestpointdict['time']=str(deltatime)
                     geowestpoint.append(geowestpointdict)
@@ -831,17 +831,17 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
                 incrementtoswath = swathincrement
 
                 while math.pow(incrementtoswath, 5) < swath:
-                    
+
                     geodesiceastazdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, math.pow(incrementtoswath, 5))
                     geodesiceastazdict['time']=str(deltatime)
                     geoloseastpoint.append(geodesiceastazdict)
-                    
+
                     geodesicwestazdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, math.pow(incrementtoswath, 5))
                     geodesicwestazdict['time']=str(deltatime)
                     geoloswestpoint.append(geodesicwestazdict)
 
                     incrementtoswath = incrementtoswath + 1
-                    
+
                 # Append reversed geoloswestpoint to geoloseastpoint
                 reversedwest = []
                 for x in reversed(geoloswestpoint):
@@ -930,7 +930,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
     # render the html schedule and write to file
     attributeshtml = []
-    
+
     for acquisition in schedule:
         attributeshtml.append('<td>' + acquisition['Satellite name'] + '</td>'\
         '<td><a href="' + str(os.path.relpath(acquisition['Swath filename'],os.path.dirname(foliumhtml)))+ '">' + str(acquisition['Sensor code']) + '</a></td>'\
@@ -967,7 +967,7 @@ if __name__ == '__main__':
     for satellite in cfg['missions']: satellites.append(satellite['satellite']['tle'])
     tle_files = cfg['tlefiles']['url']
     tles = check_tle_is_current()
-    
+
     if not args.start:
         if cfg['scenario']['start'] == 'now':
             start = datetime.utcnow()
@@ -983,7 +983,7 @@ if __name__ == '__main__':
         period = cfg['scenario']['period']
     else:
         period = int(args.period)
-        
+
     ground_station = cfg['scenario']['ground_station']  # ('-23 42', '133 54')  # Alice Spring Data Acquisition Facility
     ground_station_latitude, ground_station_longitude = ground_station
     map_centre_lat = ground_station_latitude.split()[0]+"."+str(int((float(ground_station_latitude.split()[1])/60)*100))
@@ -992,12 +992,12 @@ if __name__ == '__main__':
     ground_station_name = cfg['scenario']['ground_station_name']
     observer_horizon = cfg['scenario']['observer-horizon']
     timestep = timedelta(seconds=cfg['scenario']['timestep'])
-    
+
     if not args.output_path:
         output_path = os.path.relpath(cfg['outputs']['output_path'], os.getcwd())
     else:
         output_path = args.output_path
-    
+
     schedule_url_basename = cfg['outputs']['schedule_url_basename']
 
     if not os.path.exists(output_path):
@@ -1018,9 +1018,9 @@ if __name__ == '__main__':
                 imagingnode = satellite['satellite']['sensor']['node']
                 sensor = satellite['satellite']['sensor']['name']
                 orbitoffset = satellite['satellite']['addtoorbit']
-        logging.info("Get upcoming passes for " + i)
-        
-        logging.info(str([i, start, period]))
+        logging.debug("Get upcoming passes for " + i)
+
+        logging.debug(str([i, start, period]))
         get_upcoming_passes(i, start, period)
 
 
