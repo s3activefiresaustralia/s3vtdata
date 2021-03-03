@@ -134,7 +134,8 @@ def _dask_pivot_table(
 def process_cooccurence(
     nearest_csv_files_dict: Dict,
     dist_threshold: Optional[float] = 5000.,
-    name_prefix: Optional[str] = ''
+    name_prefix: Optional[str] = '',
+    outdir: Optional[Union[Path, str]] = Path(os.getcwd())
 ):
     """Process to compute the co-occurrence matrix between different product types.
     
@@ -142,6 +143,7 @@ def process_cooccurence(
                                    and value as file path to .csv file.
     :param dist_threshold: The distance threhold to subset the data.
     :param name_prefix: The name prefix that will be added to output file.
+    :param outdir: The name of the output directory to save outputs.
     """
     df_list = [util.load_csv(fp) for _, fp in nearest_hotspots_csv_files.items() if Path(fp).exists()]
     df = dd.concat(df_list)
@@ -156,7 +158,9 @@ def process_cooccurence(
         values='count',
         aggfunc='count'
     ).compute()
-    numerator.to_csv(f"{name_prefix}_{dist_threshold}m_numerator_pivot_table.csv")
+    numerator.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_numerator_pivot_table.csv").as_posix()
+    )
     
     # compute denominator
     denominator = _dask_pivot_table(
@@ -166,15 +170,21 @@ def process_cooccurence(
         values='count',
         aggfunc='count'
     ).compute()
-    denominator.to_csv(f"{name_prefix}_{dist_threshold}m_denominator_pivot_table.csv")
+    denominator.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_denominator_pivot_table.csv").as_posix()
+    )
     
     # compute difference
     difference = denominator - numerator
-    difference.to_csv("difference_pivot_table.csv")
+    difference.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_difference_pivot_table.csv").as_posix()
+    )
     
     # compute percentage
-    percentage = (numerator / denominator).style.format("{:.0%}") 
-    percentage.to_csv(f"{name_prefix}_{dist_threshold}m_percentage.csv")
+    percentage = numerator / denominator
+    percentage.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_percentage.csv").as_posix()
+    )
     
     # compute mean time
     timemean = _dask_pivot_table(
@@ -184,18 +194,21 @@ def process_cooccurence(
         values='timedelta',
         aggfunc='mean'
     ).compute()
-    timemean = timemean.style.format("{:}")
-    timemean.to_csv(f"{name_prefix}_{dist_threshold}m_timemean.csv")
+    timemean.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_timemean.csv").as_posix()
+    )
     
     # compute average_distance
-    averagedist = dask_pivot_table(
+    averagedist = _dask_pivot_table(
         df[df["dist_m"] < dist_threshold],
         index='2_satellite_sensor_product', 
         column='satellite_sensor_product',
         values='dist_m',
         aggfunc='mean'
     ).compute()
-    numerator.to_csv(f"{name_prefix}_{dist_threshold}m_averagedist.csv")
+    numerator.to_csv(
+        outdir.joinpath(f"{name_prefix}_{int(dist_threshold)}m_averagedist.csv").as_posix()
+    )
     
     
 def process_nearest_points(
@@ -351,5 +364,9 @@ if __name__ == "__main__":
         
     }
     
-    process_cooccurence(nearest_hotspots_csv_files, dist_threshold=5000., name_prefix=f"{start_date.replace('-', '')}_{end_date.replace('_', '')}")
+    process_cooccurence(
+        nearest_hotspots_csv_files,
+        dist_threshold=5000.,
+        name_prefix=f"{start_date.replace('-', '')}_{end_date.replace('-', '')}"
+    )
 
