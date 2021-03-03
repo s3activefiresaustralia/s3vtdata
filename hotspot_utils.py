@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import logging
-from typing import Tuple, Union, Optional, List, Dict
-
-import geopandas as gpd
-import pandas as pd
-
 import subprocess
+from pathlib import Path
+from typing import Tuple, Union, Optional, List, Dict
 from datetime import datetime
 
-import os
-import numpy as np
-from scipy.spatial import cKDTree
-from pathlib import Path
-
 import dask
+import geopandas as gpd
+import pandas as pd
+import numpy as np
 import dask.dataframe as dd
+
 from dask import delayed
+from geopy.distance import distance
+from scipy.spatial import cKDTree
 
 _LOG = logging.getLogger(__name__)
 
