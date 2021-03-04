@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import logging
+import os
 import subprocess
+from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 from typing import Tuple, Union, Optional, List, Dict
-from datetime import datetime
 
 import dask
-import geopandas as gpd
-import pandas as pd
-import numpy as np
 import dask.dataframe as dd
-
+import geopandas as gpd
+import numpy as np
+import pandas as pd
 from dask import delayed
-from geopy.distance import distance
 from scipy.spatial import cKDTree
+from fiona.errors import DriverError
 
 _LOG = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ __features__ = [
     "power",
     "datetime",
     "solar_day",
+    "solar_night",
     "satellite_sensor_product",
     "geometry",
 ]
@@ -37,27 +38,27 @@ __features__ = [
 __viirs_confidence_maps__ = {"h": 100.0, "l": 10.0, "n": 50.0}
 
 __slstr_ignore_attrs__ = [
-    'FRP_MWIR',
-    'FRP_SWIR',
-    'FRP_uncertainty_MWIR',
-    'FLAG_SWIR_SAA',
-    'FRP_uncertainty_SWIR',
-    'Glint_angle',
-    'IFOV_area',
-    'Radiance_window',
-    'S7_Fire_pixel_radiance',
-    'TCWV',
-    'classification',
-    'i',
-    'j',
-    'n_SWIR_fire',
-    'n_cloud',
-    'n_water',
-    'n_window',
-    'time',
-    'transmittance_MWIR',
-    'transmittance_SWIR',
-    'used_channel'
+    "FRP_MWIR",
+    "FRP_SWIR",
+    "FRP_uncertainty_MWIR",
+    "FLAG_SWIR_SAA",
+    "FRP_uncertainty_SWIR",
+    "Glint_angle",
+    "IFOV_area",
+    "Radiance_window",
+    "S7_Fire_pixel_radiance",
+    "TCWV",
+    "classification",
+    "i",
+    "j",
+    "n_SWIR_fire",
+    "n_cloud",
+    "n_water",
+    "n_window",
+    "time",
+    "transmittance_MWIR",
+    "transmittance_SWIR",
+    "used_channel",
 ]
 
 
@@ -75,7 +76,6 @@ def get_satellite_swaths(configuration, start, period, solar_day):
         success = True
     else:
         dirpath.mkdir(parents=True, exist_ok=True)
-
         try:
             _LOG.debug(
                 "Generating swaths "
@@ -110,9 +110,9 @@ def get_satellite_swaths(configuration, start, period, solar_day):
             )
 
             success = True
-        except:
+        except Exception as err:
             success = False
-            _LOG.debug("Swath generation failed")
+            _LOG.debug(f"Swath generation failed: {err}")
 
     return success
 
@@ -150,7 +150,11 @@ def pairwise_swath_intersect(satsensorsA, satsensorsB, solar_day):
     for sat in satsensorsB:
 
         filesB.extend(
-            [f for f in os.listdir(str(dirpath)) if sat in f and "swath.geojson" in f]
+            [
+                f
+                for f in os.listdir(str(dirpath))
+                if sat in f and "swath.geojson" in f
+            ]
         )
 
     gpdlistA = []
@@ -168,7 +172,7 @@ def get_nearest_hotspots(
     gdfa: gpd.GeoDataFrame,
     gdfb: gpd.GeoDataFrame,
     solar_date: str,
-    geosat_flag: bool
+    geosat_flag: bool,
 ) -> Union[None, gpd.GeoDataFrame]:
     """Method to compute nearest hotspots between two GeoDataFrame.
 
@@ -184,9 +188,7 @@ def get_nearest_hotspots(
     if not geosat_flag:
         try:
             gpd1, gpd2 = pairwise_swath_intersect(
-                set(gdfa["satellite"]),
-                set(gdfb["satellite"]),
-                solar_date
+                set(gdfa["satellite"]), set(gdfb["satellite"]), solar_date
             )
         except Exception as err:
             _LOG.debug(err)
@@ -202,11 +204,14 @@ def get_nearest_hotspots(
 
         maska = gdfa.within(intersection)
         gdfa = gdfa.loc[maska]
+        gdfa.reset_index(drop=True, inplace=True)
+
         maskb = gdfb.within(intersection)
         gdfb = gdfb.loc[maskb]
-
-    gdfa.reset_index(drop=True, inplace=True)
-    gdfb.reset_index(drop=True, inplace=True)
+        gdfb.reset_index(drop=True, inplace=True)
+    else:
+        gdfa.reset_index(drop=True, inplace=True)
+        gdfb.reset_index(drop=True, inplace=True)
 
     if gdfa.empty | gdfb.empty:
         _LOG.debug("Nothing to input to cdknearest")
@@ -244,26 +249,30 @@ def hotspots_compare(
         nearest hotspots DataFrame if there are hotspots.
     """
     nearest_hotspots_df = []
-    for index_a, gdf_ra in gdf_a.resample('D', on=column_name):
-        for index_b, gdf_rb in gdf_b.resample('D', on=column_name):
-            if (index_a == index_b) and (not gdf_ra.empty | gdf_rb.empty):
+    for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
+        min_dt, max_dt, delta_dt = solar_day_start_stop_period(
+            lon_east, lon_west, index_a
+        )
+        for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
+            if index_a == index_b:
                 solar_date = str(index_a.date())
-                min_dt, max_dt, delta_dt = solar_day_start_stop_period(lon_east, lon_west, index_a)
                 get_satellite_swaths(
                     config_file,
                     min_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    str(int(delta_dt.total_seconds()/60)),
-                    solar_date
+                    str(int(delta_dt.total_seconds() / 60)),
+                    solar_date,
                 )
-                nearest_hotspots = get_nearest_hotspots(gdf_ra, gdf_rb, solar_date, geosat_flag)
+                nearest_hotspots = get_nearest_hotspots(
+                    gdf_ra, gdf_rb, solar_date, geosat_flag
+                )
                 if nearest_hotspots is not None:
                     nearest_hotspots_df.append(nearest_hotspots)
     if nearest_hotspots_df:
-        return pd.concat(nearest_hotspots_df)
+        return pd.concat(nearest_hotspots_df, ignore_index=True)
     return None
 
 
-def solar_day_start_stop_period(longitude_east, longitude_west, solar_day):
+def solar_day_start_stop_period(longitude_east, longitude_west, _solar_day):
     """
     Function solar day start time from longitude and solar day in utc
 
@@ -283,12 +292,12 @@ def solar_day_start_stop_period(longitude_east, longitude_west, solar_day):
     )
     # ten_am_crossing_adjustment = np.timedelta64(120, 'm')
     # Solar day start at eastern limb
-    solar_day_start_utc = (np.datetime64(solar_day) - offset_seconds_east).astype(
-        datetime
-    )
+    solar_day_start_utc = (
+        np.datetime64(_solar_day) - offset_seconds_east
+    ).astype(datetime)
     # Solar day finish at western limb
     solar_day_finish_utc = (
-        (np.datetime64(solar_day) + offset_day) - offset_seconds_east
+        (np.datetime64(_solar_day) + offset_day) - offset_seconds_east
     ).astype(datetime)
     # Duration of solar day
     solar_day_duration = np.timedelta64(
@@ -312,6 +321,19 @@ def solar_day(utc, longitude):
     offset_seconds = int(longitude * SECONDS_PER_DEGREE)
     offset = np.timedelta64(offset_seconds, "s")
     return (np.datetime64(utc) + offset).astype(datetime)
+
+
+def solar_night(utc, longitude):
+    """
+    Function solar night for a given UTC time and longitude input
+
+    Returns datetime object representing solar day
+    """
+    SECONDS_PER_DEGREE = 240
+    offset_seconds = int(longitude * SECONDS_PER_DEGREE)
+    offset = np.timedelta64(offset_seconds, "s")
+    dt = (np.datetime64(utc) + offset).astype(datetime)
+    return dt - timedelta(hours=12)
 
 
 def ckdnearest(gdA, gdB):
@@ -347,6 +369,8 @@ def load_csv(
 
     :param csv_file: Full path to a csv file.
     :param lazy_load: The flag to indicate whether to lazy load using dask?
+    :param dtype: The data type to supply to dask or pandas read method.
+    :param skiprows: The rows to skips.
     """
     # if not lazy loading then use pandas dataframe to read.
     if not lazy_load:
@@ -359,7 +383,7 @@ def load_csv(
 def load_geojson(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    ignore_fields: Optional[List] = None
+    ignore_fields: Optional[List] = None,
 ) -> gpd.GeoDataFrame:
     """Method to read a geojson features spatially subsetted by a bbox.
 
@@ -371,8 +395,16 @@ def load_geojson(
         The GeoDataFrame loaded from geojson file.
     """
     if ignore_fields is None:
-        return gpd.read_file(geojson_file, bbox=bbox)
-    return gpd.read_file(geojson_file, bbox=bbox, ignore_fields=ignore_fields)
+        gdf = gpd.read_file(geojson_file, bbox=bbox)
+    else:
+        try:
+            # try to load by ignoring fields if fiona version supports.
+            gdf = gpd.read_file(
+                geojson_file, bbox=bbox, ignore_fields=ignore_fields
+            )
+        except DriverError:
+            gdf = gpd.read_file(geojson_file, bbox=bbox)
+    return gdf
 
 
 def temporal_subset_df(
@@ -380,7 +412,7 @@ def temporal_subset_df(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset the data
 
@@ -403,10 +435,7 @@ def temporal_subset_df(
     return df
 
 
-def chunk_gpd(
-    df: gpd.GeoDataFrame,
-    num_chunks: Optional[int] = 1
-) -> List:
+def chunk_gpd(df: gpd.GeoDataFrame, num_chunks: Optional[int] = 1) -> List:
     """Method to divide df into multiple chunks.
 
     :param df: The GeoDataFrame to be sub-divided into chunks.
@@ -456,6 +485,8 @@ def modis_viirs_temporal_subset_normalize(
     """
     gdf["datetime"] = pd.to_datetime(gdf["datetime"])
     gdf["solar_day"] = pd.to_datetime(gdf["solar_day"])
+    gdf["solar_night"] = gdf["solar_day"] - pd.Timedelta(hours=12)
+
     gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date)
     return gdf
 
@@ -466,7 +497,7 @@ def slstr_temporal_subset_normalize(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset and normalize features attributes for SLSTR product.
 
@@ -481,6 +512,7 @@ def slstr_temporal_subset_normalize(
     """
     gdf["datetime"] = pd.to_datetime(gdf["date"])
     gdf["solar_day"] = pd.to_datetime(gdf["solar_day"])
+    gdf["solar_night"] = gdf["solar_day"] - pd.Timedelta(hours=12)
 
     if provider == "eumetsat":
         # TODO fix this while write geojson files.
@@ -508,7 +540,7 @@ def process_nasa_hotspots(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize feature attributes for NASA product.
 
@@ -528,7 +560,9 @@ def process_nasa_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_time, end_time, start_date, end_date)
+        task = delayed(modis_viirs_temporal_subset_normalize)(
+            df, start_time, end_time, start_date, end_date
+        )
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -540,7 +574,7 @@ def process_dea_hotspots(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize features attributes for DEA product.
 
@@ -553,13 +587,15 @@ def process_dea_hotspots(
     :param num_chunks: The number of blocks to be sub-divided into.
 
     :returns:
-        List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.    """
+        List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features."""
     gdf = load_geojson(geojson_file, bbox=bbox)
     gdf_chunks = chunk_gpd(gdf, num_chunks)
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_time, end_time, start_date, end_date)
+        task = delayed(modis_viirs_temporal_subset_normalize)(
+            df, start_time, end_time, start_date, end_date
+        )
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -571,7 +607,7 @@ def process_landgate_hotspots(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method load and normalize features attributes for Landgate product.
 
@@ -591,7 +627,9 @@ def process_landgate_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_time, end_time, start_date, end_date)
+        task = delayed(modis_viirs_temporal_subset_normalize)(
+            df, start_time, end_time, start_date, end_date
+        )
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -603,7 +641,7 @@ def process_eumetsat_hotspots(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method load, subset and normalize features attributes for EUMETSAT product.
 
@@ -618,12 +656,16 @@ def process_eumetsat_hotspots(
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
     """
-    gdf = load_geojson(geojson_file, bbox=bbox, ignore_fields=__slstr_ignore_attrs__)
+    gdf = load_geojson(
+        geojson_file, bbox=bbox, ignore_fields=__slstr_ignore_attrs__
+    )
     gdf_chunks = chunk_gpd(gdf, num_chunks)
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(slstr_temporal_subset_normalize)(df, start_time, end_time, start_date, end_date, "eumetsat")
+        task = delayed(slstr_temporal_subset_normalize)(
+            df, start_time, end_time, start_date, end_date, "eumetsat"
+        )
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -635,7 +677,7 @@ def process_esa_hotspots(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method load, subset and normalize features attributes for ESA product.
 
@@ -650,12 +692,16 @@ def process_esa_hotspots(
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
     """
-    gdf = load_geojson(geojson_file, bbox=bbox, ignore_fields=__slstr_ignore_attrs__)
+    gdf = load_geojson(
+        geojson_file, bbox=bbox, ignore_fields=__slstr_ignore_attrs__
+    )
     gdf_chunks = chunk_gpd(gdf, num_chunks)
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(slstr_temporal_subset_normalize)(df, start_time, end_time, start_date, end_date, "esa")
+        task = delayed(slstr_temporal_subset_normalize)(
+            df, start_time, end_time, start_date, end_date, "esa"
+        )
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -667,7 +713,7 @@ def get_all_hotspots_tasks(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    num_chunks: Optional[int] = 1
+    num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
     """Method to prepare hotspots geo dataframes from input geojson files.
 
@@ -697,7 +743,7 @@ def get_all_hotspots_tasks(
             "end_time": end_time,
             "start_date": start_date,
             "end_date": end_date,
-            "num_chunks": num_chunks
+            "num_chunks": num_chunks,
         }
 
         if name == "nasa":
@@ -710,7 +756,8 @@ def get_all_hotspots_tasks(
             tasks = process_landgate_hotspots(fid, **kwargs)
         elif name == "dea":
             tasks = process_dea_hotspots(fid, **kwargs)
+        else:
+            _LOG.info(f"{name} not Implemented. Skipped processing.")
+            tasks = []
         hotspots_tasks += tasks
     return hotspots_tasks
-
-
