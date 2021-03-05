@@ -339,10 +339,14 @@ def process_nearest_points(
             )
         outfile = Path(outdir).joinpath(f"nearest_points.{product_a}.csv")
         product_a_nearest_gdfs = dask.compute(*hotspots_compare_tasks)
-        product_a_nearest_gdfs_merged = pd.concat(
-            [df for df in product_a_nearest_gdfs if df is not None],
-            ignore_index=True
-        )
+        if product_a_nearest_gdfs:
+            product_a_nearest_gdfs_merged = pd.concat(
+                [df for df in product_a_nearest_gdfs if df is not None],
+                ignore_index=True
+            )
+        else:
+            _LOG.info(f"Nothing to concatenate for {product_a}")
+            continue
         product_a_nearest_gdfs_merged.reset_index(inplace=True, drop=True)
         product_a_nearest_gdfs_merged.to_csv(outfile.as_posix())
         nearest_hotspots_product_files[product_a] = outfile
@@ -493,7 +497,7 @@ def main(
     # check if any files need to be download from s3
     for provider, fp in hotspots_files.items():
         if fp is None:
-            _LOG.info(f"{provider} frp is None. excluding this frp product.")
+            _LOG.info(f"{provider} Hotspots FRP  is None. excluding from analysis.")
             continue
         if re.match(__s3_pattern__, str(fp)):
             _, bucket, _key, _ = re.split(__s3_pattern__, str(fp))
@@ -544,7 +548,7 @@ def main(
 if __name__ == "__main__":
     # Configure log here for now, move it to __init__ at top level once
     # code is configured to run as module
-    client = Client(asynchronous=True)
+    client = Client(asynchronous=False)
     LOG_CONFIG = Path(__file__).parent.joinpath("logging.cfg")
     logging.config.fileConfig(LOG_CONFIG.as_posix())
     _LOG = logging.getLogger(__name__)
