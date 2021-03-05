@@ -125,7 +125,7 @@ def process_cooccurence(
     dist_threshold: Optional[float] = 5000.0,
     name_prefix: Optional[str] = "",
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
-):
+) -> None:
     """Process to compute the co-occurrence matrix between different product types.
 
     :param nearest_csv_files_dict: The dictionary with key as satellite sensor product type
@@ -310,7 +310,7 @@ def process_nearest_points(
     _ = dask.compute(*swath_genration_tasks)
     
     
-    _LOG.info(f"Generating neareast hotspots...)
+    _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
     ]
@@ -319,7 +319,6 @@ def process_nearest_points(
         hotspots_compare_tasks = []
         for product_b in unique_products:
             geosat_flag = False
-
             if ("AHI" in [product_a, product_b]) or ("INS1" in [product_a, product_b]):
                 geosat_flag = True
 
