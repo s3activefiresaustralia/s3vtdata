@@ -83,7 +83,7 @@ def get_satellite_swaths(
     if solar_date_swath_dir.exists():
         _LOG.debug(str(solar_date) + " exists - skipping swath generation")
         return True
-    
+
     solar_date_swath_dir.mkdir(parents=True)
     min_dt, _, delta_dt = solar_day_start_stop_period(
             lon_east, lon_west, solar_dt
@@ -124,8 +124,8 @@ def get_satellite_swaths(
         )
         return True
     except Exception as err:
-        _LOG.debug(f"Swath generation failed with return code: {ret_code} and err: {err}")
-        
+        _LOG.debug(f"Swath generation failed with err: {err}")
+
     return False
 
 
@@ -169,12 +169,12 @@ def pairwise_swath_intersect(
         )
 
     gpdlistA = []
-    for file in filesA:
-        df = gpd.read_file(Path.joinpath(dirpath, file))
+    for _file in filesA:
+        df = gpd.read_file(Path.joinpath(swath_directory, _file))
         gpdlistA.append(df)
     gpdlistB = []
-    for file in filesB:
-        df = gpd.read_file(Path.joinpath(dirpath, file))
+    for _file in filesB:
+        df = gpd.read_file(Path.joinpath(swath_directory, _file))
         gpdlistB.append(df)
     return pd.concat(gpdlistA), pd.concat(gpdlistB)
 
@@ -193,7 +193,7 @@ def get_nearest_hotspots(
     :param solar_date: The solar date
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
     :param swath_directory: The directory where swath files for solar_date is locate.
-    
+
     :returns:
         None if no intersections or fails in pairwise swath intersects.
         GeoDataFrame from cdknearest method.
@@ -240,25 +240,27 @@ def swath_generation_tasks(
     end_dt: datetime,
     lon_east: float,
     lon_west: float,
-    swath_directory: Optional[Union[Path, str]] = None, 
+    swath_directory: Optional[Union[Path, str]] = None,
+    config_file: Optional[Union[Path, str]] = "s3vtconfig.yaml"
 ) -> List[dask.delayed]:
     """Method to genrate satellite swaths from start_dt to end_date at 1 day interval.
-    
+
     :param start_dt: The start datetime to generate the swath from.
     :param end_dt: The end datetime to end the swath genration.
     :param lon_east: The eastern longitude used in spatial subset.
     :param lon_west: The western longitude used in a spatial subset.
-    :param swath_directory: The parent directory to store the solar_date swath files. 
-    
+    :param swath_directory: The parent directory to store the solar_date swath files.
+    :param config_file: The config file to be used in swath generation.
+
     :returns:
         List of delayed tasks to generate daily satellite swaths.
     """
     if swath_directory is None:
         swath_directory = Path(os.getcwd()).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
         swath_directory.mkdir(exist_ok=True)
-    
+
     dts = [start_dt + timedelta(days=day) for day in range((end_dt - start_dt).days + 1)]
-    
+
     swath_tasks = [
         delayed(get_satellite_swaths)(
             config_file,
@@ -271,14 +273,13 @@ def swath_generation_tasks(
     ]
     return swath_tasks
 
-    
+
 def hotspots_compare(
     gdf_a: gpd.GeoDataFrame,
     gdf_b: gpd.GeoDataFrame,
     lon_east: float,
     lon_west: float,
     column_name: str,
-    config_file: Union[Path, str],
     geosat_flag: bool,
     swath_directory: Union[Path, str]
 ) -> Union[None, pd.DataFrame]:
@@ -292,25 +293,25 @@ def hotspots_compare(
     :param lon_east: The eastern longitude used in spatial subset.
     :param lon_west: The western longitude used in a spatial subset.
     :param column_name: The name of the column to resample the data on.
-    :param config_file: The config file to be used in swath generation.
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
     :param swath_directory: The parent directory to store the solar_date swath files.
+
     :returns:
         None if no nearest hotspots detected.
         nearest hotspots DataFrame if there are hotspots.
     """
-    
+
     nearest_hotspots_df = []
     for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = str(index_a.date())
-                
+
                 # skip if swath directory for the solar_date is missing.
                 solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
                 if not solar_date_swath_directory.exists():
                     continue
-                
+
                 nearest_hotspots = get_nearest_hotspots(
                     gdf_ra, gdf_rb, solar_date, geosat_flag, solar_date_swath_directory
                 )

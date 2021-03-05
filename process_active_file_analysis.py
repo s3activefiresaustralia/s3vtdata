@@ -291,25 +291,26 @@ def process_nearest_points(
     _LOG.info(
         f"latitude range: {hotspots_gdf['latitude'].min()}  to {hotspots_gdf['latitude'].max()}"
     )
-    
+
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
-    
+
     _LOG.info(f"Generating satellite swaths from {solar_start_dt.date()} to {solar_end_dt.date()}")
     swath_directory = Path(outdir).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
     if not swath_directory.exists():
         swath_directory.mkdir(exist_ok=True, parents=True)
-        
-    swath_generation_tasks = swath_generation_tasks(
+
+    swath_generation_tasks = util.swath_generation_tasks(
         solar_start_dt,
         solar_end_dt,
         lon_east,
         lon_west,
-        swath_directory=swath_directory
+        swath_directory=swath_directory,
+        config_file="s3vtconfig.yaml"
     )
-    _ = dask.compute(*swath_genration_tasks)
-    
-    
+    _ = dask.compute(*swath_generation_tasks)
+
+
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
@@ -335,7 +336,6 @@ def process_nearest_points(
                     lon_east,
                     lon_west,
                     "solar_day",
-                    "s3vtconfig.yaml",
                     geosat_flag,
                 )
             )
@@ -456,7 +456,7 @@ def process_nearest_points(
     "--chunks",
     type=click.INT,
     help="Number of chunks to block geojson files used in multi-processing.",
-    default=1000,
+    default=100,
     show_default=True,
 )
 def main(
@@ -507,7 +507,6 @@ def main(
             _LOG.info(f"downloading {fp} to {outfile.as_posix()}")
             s3_client.download_file(bucket, _key, outfile.as_posix())
 
-    print(hotspots_files)
     nearest_hotspots_csv_files = process_nearest_points(
         hotspots_files,
         lon_west,
@@ -547,7 +546,9 @@ def main(
 if __name__ == "__main__":
     # Configure log here for now, move it to __init__ at top level once
     # code is configured to run as module
+    client = Client(asynchronous=True)
     LOG_CONFIG = Path(__file__).parent.joinpath("logging.cfg")
     logging.config.fileConfig(LOG_CONFIG.as_posix())
     _LOG = logging.getLogger(__name__)
     main()
+    client.close()
