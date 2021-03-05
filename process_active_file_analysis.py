@@ -291,7 +291,26 @@ def process_nearest_points(
     _LOG.info(
         f"latitude range: {hotspots_gdf['latitude'].min()}  to {hotspots_gdf['latitude'].max()}"
     )
-
+    
+    solar_start_dt = hotspots_gdf['solar_day'].min()
+    solar_end_dt = hotspots_gdf['solar_day'].max()
+    
+    _LOG.info(f"Generating satellite swaths from {solar_start_dt.date()} to {solar_end_dt.date()}")
+    swath_directory = Path(outdir).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
+    if not swath_directory.exists():
+        swath_directory.mkdir(exist_ok=True, parents=True)
+        
+    swath_generation_tasks = swath_generation_tasks(
+        solar_start_dt,
+        solar_end_dt,
+        lon_east,
+        lon_west,
+        swath_directory=swath_directory
+    )
+    _ = dask.compute(*swath_genration_tasks)
+    
+    
+    _LOG.info(f"Generating neareast hotspots...)
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
     ]

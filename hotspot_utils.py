@@ -62,62 +62,78 @@ __slstr_ignore_attrs__ = [
 ]
 
 
-def get_satellite_swaths(configuration, start, period, solar_day):
+def get_satellite_swaths(
+    configuration: Union[Path, str],
+    solar_dt: np.datetime64,
+    lon_east: float,
+    lon_west: float,
+    swath_directory: Optional[Union[Path, str]] = None
+) -> bool:
     """
     Function to determine the common imaging footprint of a pair of sensors
 
     Returns the imaging footprints of a pair of sensors for a period from a starting datetime
     """
-    output = Path("output")
-    dirpath = Path.joinpath(output, solar_day)
+    if swath_directory is None:
+        swath_directory = Path(os.getcwd()).joinpath(f"output_{int(lon_east)}_{int(lon_west)}")
+        swath_directory.mkdir(parents=True, exist_ok=True)
+    solar_date = str(solar_dt.date())
 
-    if dirpath.exists():
-        _LOG.debug(str(solar_day) + " exists - skipping swath generation")
-        success = True
-    else:
-        dirpath.mkdir(parents=True, exist_ok=True)
-        try:
-            _LOG.debug(
-                "Generating swaths "
-                + str(
-                    [
-                        "python",
-                        "swathpredict.py",
-                        "--configuration",
-                        configuration,
-                        "--start",
-                        start,
-                        "--period",
-                        period,
-                        "--output_path",
-                        str(dirpath),
-                    ]
-                )
-            )
-            subprocess.call(
-                [
-                    "python",
-                    "swathpredict.py",
-                    "--configuration",
-                    configuration,
-                    "--start",
-                    start,
-                    "--period",
-                    period,
-                    "--output_path",
-                    str(dirpath),
-                ]
-            )
+    solar_date_swath_dir = swath_directory.joinpath(solar_date)
+    if solar_date_swath_dir.exists():
+        _LOG.debug(str(solar_date) + " exists - skipping swath generation")
+        return True
+    
+    solar_date_swath_dir.mkdir(parents=True)
+    min_dt, _, delta_dt = solar_day_start_stop_period(
+            lon_east, lon_west, solar_dt
+    )
+    start =  min_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    period = str(int(delta_dt.total_seconds() / 60))
+    _LOG.debug(
+        "Generating swaths "
+        + str(
+            [
+                "python",
+                "swathpredict.py",
+                "--configuration",
+                configuration,
+                "--start",
+                start,
+                "--period",
+                period,
+                "--output_path",
+                solar_date_swath_dir.as_posix(),
+            ]
+        )
+    )
+    try:
+        ret_code = subprocess.check_call(
+            [
+                "python",
+                "swathpredict.py",
+                "--configuration",
+                configuration,
+                "--start",
+                start,
+                "--period",
+                period,
+                "--output_path",
+                solar_date_swath_dir.as_posix(),
+            ]
+        )
+        return True
+    except Exception as err:
+        _LOG.debug(f"Swath generation failed with return code: {ret_code} and err: {err}")
+        
+    return False
 
-            success = True
-        except Exception as err:
-            success = False
-            _LOG.debug(f"Swath generation failed: {err}")
 
-    return success
-
-
-def pairwise_swath_intersect(satsensorsA, satsensorsB, solar_day):
+def pairwise_swath_intersect(
+    satsensorsA: str,
+    satsensorsB: str,
+    swath_directory: Union[Path, str]
+):
     """
     Function intersect geometries of sensors for a given solar day
 
@@ -132,27 +148,22 @@ def pairwise_swath_intersect(satsensorsA, satsensorsB, solar_day):
     filesA = []
     filesB = []
 
-    output = Path("output")
-    dirpath = Path.joinpath(output, solar_day)
-
     # Add a time interval for the intersection based on start_time end_time
 
     for sat in satsensorsA:
-
         filesA.extend(
             [
                 f
-                for f in os.listdir(str(dirpath))
+                for f in Path(swath_directory).iterdir()
                 if (sat in f) and ("swath.geojson" in f)
             ]
         )
 
     for sat in satsensorsB:
-
         filesB.extend(
             [
                 f
-                for f in os.listdir(str(dirpath))
+                for f in Path(swath_directory).iterdir()
                 if sat in f and "swath.geojson" in f
             ]
         )
@@ -173,6 +184,7 @@ def get_nearest_hotspots(
     gdfb: gpd.GeoDataFrame,
     solar_date: str,
     geosat_flag: bool,
+    swath_directory: Union[Path, str]
 ) -> Union[None, gpd.GeoDataFrame]:
     """Method to compute nearest hotspots between two GeoDataFrame.
 
@@ -180,7 +192,8 @@ def get_nearest_hotspots(
     :param gdfb: The GeoDataFrame
     :param solar_date: The solar date
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
-
+    :param swath_directory: The directory where swath files for solar_date is locate.
+    
     :returns:
         None if no intersections or fails in pairwise swath intersects.
         GeoDataFrame from cdknearest method.
@@ -188,7 +201,7 @@ def get_nearest_hotspots(
     if not geosat_flag:
         try:
             gpd1, gpd2 = pairwise_swath_intersect(
-                set(gdfa["satellite"]), set(gdfb["satellite"]), solar_date
+                set(gdfa["satellite"]), set(gdfb["satellite"]), swath_directory
             )
         except Exception as err:
             _LOG.debug(err)
@@ -222,6 +235,43 @@ def get_nearest_hotspots(
     return nearest_hotspots
 
 
+def swath_generation_tasks(
+    start_dt: datetime,
+    end_dt: datetime,
+    lon_east: float,
+    lon_west: float,
+    swath_directory: Optional[Union[Path, str]] = None, 
+) -> List[dask.delayed]:
+    """Method to genrate satellite swaths from start_dt to end_date at 1 day interval.
+    
+    :param start_dt: The start datetime to generate the swath from.
+    :param end_dt: The end datetime to end the swath genration.
+    :param lon_east: The eastern longitude used in spatial subset.
+    :param lon_west: The western longitude used in a spatial subset.
+    :param swath_directory: The parent directory to store the solar_date swath files. 
+    
+    :returns:
+        List of delayed tasks to generate daily satellite swaths.
+    """
+    if swath_directory is None:
+        swath_directory = Path(os.getcwd()).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
+        swath_directory.mkdir(exist_ok=True)
+    
+    dts = [start_dt + timedelta(days=day) for day in range((end_dt - start_dt).days + 1)]
+    
+    swath_tasks = [
+        delayed(get_satellite_swaths)(
+            config_file,
+            _dt,
+            lon_east,
+            lon_west,
+            swath_directory
+        )
+        for _dt in dts
+    ]
+    return swath_tasks
+
+    
 def hotspots_compare(
     gdf_a: gpd.GeoDataFrame,
     gdf_b: gpd.GeoDataFrame,
@@ -230,6 +280,7 @@ def hotspots_compare(
     column_name: str,
     config_file: Union[Path, str],
     geosat_flag: bool,
+    swath_directory: Union[Path, str]
 ) -> Union[None, pd.DataFrame]:
     """Function compares sensor GeoDataFrame from two satellite sensor product.
 
@@ -243,27 +294,25 @@ def hotspots_compare(
     :param column_name: The name of the column to resample the data on.
     :param config_file: The config file to be used in swath generation.
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
-
+    :param swath_directory: The parent directory to store the solar_date swath files.
     :returns:
         None if no nearest hotspots detected.
         nearest hotspots DataFrame if there are hotspots.
     """
+    
     nearest_hotspots_df = []
     for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
-        min_dt, max_dt, delta_dt = solar_day_start_stop_period(
-            lon_east, lon_west, index_a
-        )
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = str(index_a.date())
-                get_satellite_swaths(
-                    config_file,
-                    min_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    str(int(delta_dt.total_seconds() / 60)),
-                    solar_date,
-                )
+                
+                # skip if swath directory for the solar_date is missing.
+                solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
+                if not solar_date_swath_directory.exists():
+                    continue
+                
                 nearest_hotspots = get_nearest_hotspots(
-                    gdf_ra, gdf_rb, solar_date, geosat_flag
+                    gdf_ra, gdf_rb, solar_date, geosat_flag, solar_date_swath_directory
                 )
                 if nearest_hotspots is not None:
                     nearest_hotspots_df.append(nearest_hotspots)
