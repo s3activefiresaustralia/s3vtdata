@@ -88,7 +88,7 @@ def get_satellite_swaths(
     min_dt, _, delta_dt = solar_day_start_stop_period(
             lon_east, lon_west, solar_dt
     )
-    start =  min_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    start = min_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     period = str(int(delta_dt.total_seconds() / 60))
     _LOG.debug(
         "Generating swaths "
@@ -108,7 +108,7 @@ def get_satellite_swaths(
         )
     )
     try:
-        ret_code = subprocess.check_call(
+        subprocess.check_call(
             [
                 "python",
                 "swathpredict.py",
@@ -130,8 +130,8 @@ def get_satellite_swaths(
 
 
 def pairwise_swath_intersect(
-    satsensorsA: str,
-    satsensorsB: str,
+    satsensors_a: set,
+    satsensors_b: set,
     swath_directory: Union[Path, str]
 ):
     """
@@ -140,18 +140,18 @@ def pairwise_swath_intersect(
     Returns intersection geometry
     """
     _LOG.info(
-        "Running intersection for " + str(satsensorsA) + " " + str(satsensorsB)
+        "Running intersection for " + str(satsensors_a) + " " + str(satsensors_b)
     )
-    satsensorsA = [w.replace(" ", "_") for w in satsensorsA]
-    satsensorsB = [w.replace(" ", "_") for w in satsensorsB]
+    satsensors_a = [w.replace(" ", "_") for w in satsensors_a]
+    satsensors_b = [w.replace(" ", "_") for w in satsensors_b]
 
-    filesA = []
-    filesB = []
+    files_a = []
+    files_b = []
 
     # Add a time interval for the intersection based on start_time end_time
 
-    for sat in satsensorsA:
-        filesA.extend(
+    for sat in satsensors_a:
+        files_a.extend(
             [
                 f
                 for f in Path(swath_directory).iterdir()
@@ -159,8 +159,8 @@ def pairwise_swath_intersect(
             ]
         )
 
-    for sat in satsensorsB:
-        filesB.extend(
+    for sat in satsensors_b:
+        files_b.extend(
             [
                 f
                 for f in Path(swath_directory).iterdir()
@@ -168,15 +168,15 @@ def pairwise_swath_intersect(
             ]
         )
 
-    gpdlistA = []
-    for _file in filesA:
+    gpdlist_a = []
+    for _file in files_a:
         df = gpd.read_file(Path.joinpath(swath_directory, _file))
-        gpdlistA.append(df)
-    gpdlistB = []
-    for _file in filesB:
+        gpdlist_a.append(df)
+    gpdlist_b = []
+    for _file in files_b:
         df = gpd.read_file(Path.joinpath(swath_directory, _file))
-        gpdlistB.append(df)
-    return pd.concat(gpdlistA), pd.concat(gpdlistB)
+        gpdlist_b.append(df)
+    return pd.concat(gpdlist_a), pd.concat(gpdlist_b)
 
 
 def get_nearest_hotspots(
@@ -277,8 +277,6 @@ def swath_generation_tasks(
 def hotspots_compare(
     gdf_a: gpd.GeoDataFrame,
     gdf_b: gpd.GeoDataFrame,
-    lon_east: float,
-    lon_west: float,
     column_name: str,
     geosat_flag: bool,
     swath_directory: Union[Path, str]
@@ -290,8 +288,6 @@ def hotspots_compare(
 
     :param gdf_a: The GeoDataFrame from satellite sensor product a.
     :param gdf_b: The GeoDataFrame from satellite sensor product b.
-    :param lon_east: The eastern longitude used in spatial subset.
-    :param lon_west: The western longitude used in a spatial subset.
     :param column_name: The name of the column to resample the data on.
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
     :param swath_directory: The parent directory to store the solar_date swath files.
@@ -306,12 +302,10 @@ def hotspots_compare(
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = str(index_a.date())
-
                 # skip if swath directory for the solar_date is missing.
                 solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
                 if not solar_date_swath_directory.exists():
                     continue
-
                 nearest_hotspots = get_nearest_hotspots(
                     gdf_ra, gdf_rb, solar_date, geosat_flag, solar_date_swath_directory
                 )
@@ -329,12 +323,12 @@ def solar_day_start_stop_period(longitude_east, longitude_west, _solar_day):
     Returns datetime start stop in utc and period between in minutes
     """
     # Solar day time relative to UTC and local longitude
-    SECONDS_PER_DEGREE = 240
+    seconds_per_degree = 240
     # Offset for eastern limb
-    offset_seconds_east = int(longitude_east * SECONDS_PER_DEGREE)
+    offset_seconds_east = int(longitude_east * seconds_per_degree)
     offset_seconds_east = np.timedelta64(offset_seconds_east, "s")
     # offset for wester limb
-    offset_seconds_west = int(longitude_west * SECONDS_PER_DEGREE)
+    offset_seconds_west = int(longitude_west * seconds_per_degree)
     offset_seconds_west = np.timedelta64(offset_seconds_west, "s")
     # time between two limbs
     offset_day = np.timedelta64(1440, "m") + abs(
@@ -367,8 +361,8 @@ def solar_day(utc, longitude):
 
     Returns datetime object representing solar day
     """
-    SECONDS_PER_DEGREE = 240
-    offset_seconds = int(longitude * SECONDS_PER_DEGREE)
+    seconds_per_degree = 240
+    offset_seconds = int(longitude * seconds_per_degree)
     offset = np.timedelta64(offset_seconds, "s")
     return (np.datetime64(utc) + offset).astype(datetime)
 
@@ -379,28 +373,28 @@ def solar_night(utc, longitude):
 
     Returns datetime object representing solar day
     """
-    SECONDS_PER_DEGREE = 240
-    offset_seconds = int(longitude * SECONDS_PER_DEGREE)
+    seconds_per_degree = 240
+    offset_seconds = int(longitude * seconds_per_degree)
     offset = np.timedelta64(offset_seconds, "s")
     dt = (np.datetime64(utc) + offset).astype(datetime)
     return dt - timedelta(hours=12)
 
 
-def ckdnearest(gdA, gdB):
+def ckdnearest(gdf_a, gdf_b):
     """
     Function to find points in "B" nearest to "A" geopandas dataframe
 
     Returns geopandas dataframe with records representing matches
     """
-    nA = np.array(list(zip(gdA.geometry.x, gdA.geometry.y)))
-    nB = np.array(list(zip(gdB.geometry.x, gdB.geometry.y)))
-    btree = cKDTree(nB)
-    dist, idx = btree.query(nA, k=1)
+    na = np.array(list(zip(gdf_a.geometry.x, gdf_b.geometry.y)))
+    nb = np.array(list(zip(gdf_b.geometry.x, gdf_b.geometry.y)))
+    btree = cKDTree(nb)
+    dist, idx = btree.query(na, k=1)
     gdf = gpd.GeoDataFrame(
         pd.concat(
             [
-                gdA.reset_index(drop=True),
-                gdB.loc[idx].reset_index(drop=True).add_prefix("2_"),
+                gdf_a.reset_index(drop=True),
+                gdf_b.loc[idx].reset_index(drop=True).add_prefix("2_"),
                 pd.Series(dist, name="dist"),
             ],
             axis=1,
@@ -637,7 +631,8 @@ def process_dea_hotspots(
     :param num_chunks: The number of blocks to be sub-divided into.
 
     :returns:
-        List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features."""
+        List of dask delayed tasks that would return subsetted GeoDataFrame and
+        normalize features."""
     gdf = load_geojson(geojson_file, bbox=bbox)
     gdf_chunks = chunk_gpd(gdf, num_chunks)
 
@@ -670,7 +665,8 @@ def process_landgate_hotspots(
     :param num_chunks: The number of blocks to be sub-divided into.
 
     :returns:
-        List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
+        List of dask delayed tasks that would return subsetted GeoDataFrame and
+        normalize features.
     """
     gdf = load_geojson(geojson_file, bbox=bbox)
     gdf_chunks = chunk_gpd(gdf, num_chunks)
@@ -693,7 +689,7 @@ def process_eumetsat_hotspots(
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
 ) -> List[dask.delayed]:
-    """Method load, subset and normalize features attributes for EUMETSAT product.
+    """Method to load, subset and normalize features attributes for EUMETSAT product.
 
     :param geojson_file: Fupp path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
@@ -704,7 +700,8 @@ def process_eumetsat_hotspots(
     :param num_chunks: The number of blocks to be sub-divided into.
 
     :returns:
-        List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
+        List of dask delayed tasks that would return subsetted GeoDataFrame and
+        normalize features.
     """
     gdf = load_geojson(
         geojson_file, bbox=bbox, ignore_fields=__slstr_ignore_attrs__
@@ -767,8 +764,8 @@ def get_all_hotspots_tasks(
 ) -> List[dask.delayed]:
     """Method to prepare hotspots geo dataframes from input geojson files.
 
-    The data from geojson files are spatially subsetted to bbox extent and
-    temporally subsetted to hours between start and end time, and dates between
+    The data from geojson files are spatially subset to bbox extent and
+    temporally subset to hours between start and end time, and dates between
     start and end date.
 
     :param input_files_dict: The dictionary with key as data provider and value as file path.

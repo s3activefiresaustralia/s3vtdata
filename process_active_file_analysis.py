@@ -40,7 +40,7 @@ def _distance(df: pd.DataFrame) -> List:
 def _prepare_pivot_dataframe(
     df: dd.DataFrame,
 ) -> dd.DataFrame:
-    """Helper method to convert datetime columns to datetime and subset using distance threhold.
+    """Helper method to convert datetime columns to datetime and subset using distance threshold.
 
     :param df: The dask DataFrame.
 
@@ -209,7 +209,7 @@ def process_cooccurence(
         values="dist_m",
         aggfunc="mean",
     ).compute()
-    numerator.to_csv(
+    averagedist.to_csv(
         outdir.joinpath(
             f"{name_prefix}_{int(dist_threshold)}m_averagedist.csv"
         ).as_posix()
@@ -280,15 +280,15 @@ def process_nearest_points(
         [df for df in dask.compute(*attrs_normalization_tasks)]
     )
     print(hotspots_gdf.count())
-    _LOG.info(f"The merged hotspots DataFrame sample:\n {hotspots_gdf}")
-    _LOG.info("The spatial and temporal extents of merged hotspots.")
-    _LOG.info(
+    _LOG.debug(f"The merged hotspots DataFrame sample:\n {hotspots_gdf}")
+    _LOG.debug("The spatial and temporal extents of merged hotspots.")
+    _LOG.debug(
         f"minimum datetime: {hotspots_gdf['datetime'].min()}, maximum datetime: {hotspots_gdf['datetime'].max()}"
     )
-    _LOG.info(
+    _LOG.debug(
         f"longitude range: {hotspots_gdf['longitude'].min()}  to {hotspots_gdf['longitude'].max()}"
     )
-    _LOG.info(
+    _LOG.debug(
         f"latitude range: {hotspots_gdf['latitude'].min()}  to {hotspots_gdf['latitude'].max()}"
     )
 
@@ -309,7 +309,6 @@ def process_nearest_points(
         config_file="s3vtconfig.yaml"
     )
     _ = dask.compute(*swath_generation_tasks)
-
 
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
@@ -333,10 +332,9 @@ def process_nearest_points(
                 dask.delayed(util.hotspots_compare)(
                     gdf_a,
                     gdf_b,
-                    lon_east,
-                    lon_west,
                     "solar_day",
                     geosat_flag,
+                    swath_directory
                 )
             )
         outfile = Path(outdir).joinpath(f"nearest_points.{product_a}.csv")
@@ -497,8 +495,8 @@ def main(
         if fp is None:
             _LOG.info(f"{provider} frp is None. excluding this frp product.")
             continue
-        if re.match(__s3_pattern__, fp):
-            _, bucket, _key, _ = re.split(__s3_pattern__, fp)
+        if re.match(__s3_pattern__, str(fp)):
+            _, bucket, _key, _ = re.split(__s3_pattern__, str(fp))
             outfile = Path(outdir).joinpath(Path(fp).name)
             hotspots_files[provider] = outfile
             if outfile.exists():
