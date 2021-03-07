@@ -316,37 +316,36 @@ def process_nearest_points(
     ]
     nearest_hotspots_product_files = dict()
     for product_a in unique_products:
+        gdf_a = hotspots_gdf[
+            hotspots_gdf["satellite_sensor_product"] == product_a
+        ]
         hotspots_compare_tasks = []
         for product_b in unique_products:
+            print(f"Comparing Hotspots for {product_a} and {product_b}")
             geosat_flag = False
             if ("AHI" in [product_a, product_b]) or ("INS1" in [product_a, product_b]):
                 geosat_flag = True
-
-            gdf_a = hotspots_gdf[
-                hotspots_gdf["satellite_sensor_product"] == product_a
-            ]
             gdf_b = hotspots_gdf[
                 hotspots_gdf["satellite_sensor_product"] == product_b
             ]
-            hotspots_compare_tasks.append(
-                dask.delayed(util.hotspots_compare)(
-                    gdf_a,
-                    gdf_b,
-                    "solar_day",
-                    geosat_flag,
-                    swath_directory
-                )
+            hotspots_compare_tasks += util.hotspots_compare(
+                gdf_a,
+                gdf_b,
+                "solar_day",
+                geosat_flag,
+                swath_directory
             )
+
         outfile = Path(outdir).joinpath(f"nearest_points.{product_a}.csv")
-        product_a_nearest_gdfs = dask.compute(*hotspots_compare_tasks)
-        if product_a_nearest_gdfs:
+        try:
             product_a_nearest_gdfs_merged = pd.concat(
-                [df for df in product_a_nearest_gdfs if df is not None],
+                [df for df in dask.compute(*hotspots_compare_tasks) if df is not None],
                 ignore_index=True
             )
-        else:
-            _LOG.info(f"Nothing to concatenate for {product_a}")
+        except ValueError:
+            _LOG.info(f"Nothing to concatenate for: {product_a}")
             continue
+
         product_a_nearest_gdfs_merged.reset_index(inplace=True, drop=True)
         product_a_nearest_gdfs_merged.to_csv(outfile.as_posix())
         nearest_hotspots_product_files[product_a] = outfile
@@ -458,7 +457,7 @@ def process_nearest_points(
     "--chunks",
     type=click.INT,
     help="Number of chunks to block geojson files used in multi-processing.",
-    default=100,
+    default=10000,
     show_default=True,
 )
 def main(
@@ -548,7 +547,7 @@ def main(
 if __name__ == "__main__":
     # Configure log here for now, move it to __init__ at top level once
     # code is configured to run as module
-    client = Client(asynchronous=False)
+    client = Client()
     LOG_CONFIG = Path(__file__).parent.joinpath("logging.cfg")
     logging.config.fileConfig(LOG_CONFIG.as_posix())
     _LOG = logging.getLogger(__name__)

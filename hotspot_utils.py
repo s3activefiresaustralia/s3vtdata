@@ -153,28 +153,28 @@ def pairwise_swath_intersect(
     for sat in satsensors_a:
         files_a.extend(
             [
-                f
-                for f in Path(swath_directory).iterdir()
-                if (sat in f) and ("swath.geojson" in f)
+                fp
+                for fp in Path(swath_directory).iterdir()
+                if (sat in fp.name) and ("swath.geojson" in fp.name)
             ]
         )
 
     for sat in satsensors_b:
         files_b.extend(
             [
-                f
-                for f in Path(swath_directory).iterdir()
-                if sat in f and "swath.geojson" in f
+                fp
+                for fp in Path(swath_directory).iterdir()
+                if (sat in fp.name) and ("swath.geojson" in fp.name)
             ]
         )
 
     gpdlist_a = []
-    for _file in files_a:
-        df = gpd.read_file(Path.joinpath(swath_directory, _file))
+    for _fp in files_a:
+        df = gpd.read_file(_fp.as_posix())
         gpdlist_a.append(df)
     gpdlist_b = []
-    for _file in files_b:
-        df = gpd.read_file(Path.joinpath(swath_directory, _file))
+    for _fp in files_b:
+        df = gpd.read_file(_fp.as_posix())
         gpdlist_b.append(df)
     return pd.concat(gpdlist_a), pd.concat(gpdlist_b)
 
@@ -182,7 +182,6 @@ def pairwise_swath_intersect(
 def get_nearest_hotspots(
     gdfa: gpd.GeoDataFrame,
     gdfb: gpd.GeoDataFrame,
-    solar_date: str,
     geosat_flag: bool,
     swath_directory: Union[Path, str]
 ) -> Union[None, gpd.GeoDataFrame]:
@@ -190,7 +189,6 @@ def get_nearest_hotspots(
 
     :param gdfa: The GeoDataFrame
     :param gdfb: The GeoDataFrame
-    :param solar_date: The solar date
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
     :param swath_directory: The directory where swath files for solar_date is locate.
 
@@ -212,7 +210,7 @@ def get_nearest_hotspots(
 
         intersection = gpd1.intersection(gpd2)
         if intersection is None:
-            _LOG.debug(f"Intersection is None: {solar_date}")
+            _LOG.debug(f"Intersection is None for {swath_directory.name}")
             return None
 
         maska = gdfa.within(intersection)
@@ -280,7 +278,7 @@ def hotspots_compare(
     column_name: str,
     geosat_flag: bool,
     swath_directory: Union[Path, str]
-) -> Union[None, pd.DataFrame]:
+) -> List[dask.delayed]:
     """Function compares sensor GeoDataFrame from two satellite sensor product.
 
     Subsets hotspots to common imaged area and determines points nearest to productA from hotspots_gdf.
@@ -293,11 +291,10 @@ def hotspots_compare(
     :param swath_directory: The parent directory to store the solar_date swath files.
 
     :returns:
-        None if no nearest hotspots detected.
-        nearest hotspots DataFrame if there are hotspots.
+        delayed tasks to compute nearest hotspots from GeoDataFrame gdf_a and gdf_b.
     """
 
-    nearest_hotspots_df = []
+    nearest_hotspots_tasks = []
     for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
@@ -306,14 +303,15 @@ def hotspots_compare(
                 solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
                 if not solar_date_swath_directory.exists():
                     continue
-                nearest_hotspots = get_nearest_hotspots(
-                    gdf_ra, gdf_rb, solar_date, geosat_flag, solar_date_swath_directory
+                nearest_hotspots_tasks.append(
+                    delayed(get_nearest_hotspots)(
+                        gdf_ra,
+                        gdf_rb,
+                        geosat_flag,
+                        solar_date_swath_directory
+                    )
                 )
-                if nearest_hotspots is not None:
-                    nearest_hotspots_df.append(nearest_hotspots)
-    if nearest_hotspots_df:
-        return pd.concat(nearest_hotspots_df, ignore_index=True)
-    return None
+    return nearest_hotspots_tasks
 
 
 def solar_day_start_stop_period(longitude_east, longitude_west, _solar_day):
@@ -386,7 +384,7 @@ def ckdnearest(gdf_a, gdf_b):
 
     Returns geopandas dataframe with records representing matches
     """
-    na = np.array(list(zip(gdf_a.geometry.x, gdf_b.geometry.y)))
+    na = np.array(list(zip(gdf_a.geometry.x, gdf_a.geometry.y)))
     nb = np.array(list(zip(gdf_b.geometry.x, gdf_b.geometry.y)))
     btree = cKDTree(nb)
     dist, idx = btree.query(na, k=1)
