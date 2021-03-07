@@ -279,8 +279,8 @@ def process_nearest_points(
     hotspots_gdf = pd.concat(
         [df for df in dask.compute(*attrs_normalization_tasks)]
     )
+    print(hotspots_gdf.head())
     print(hotspots_gdf.count())
-    _LOG.debug(f"The merged hotspots DataFrame sample:\n {hotspots_gdf}")
     _LOG.debug("The spatial and temporal extents of merged hotspots.")
     _LOG.debug(
         f"minimum datetime: {hotspots_gdf['datetime'].min()}, maximum datetime: {hotspots_gdf['datetime'].max()}"
@@ -319,7 +319,7 @@ def process_nearest_points(
         gdf_a = hotspots_gdf[
             hotspots_gdf["satellite_sensor_product"] == product_a
         ]
-        hotspots_compare_tasks = []
+        nearest_hotspots_dfs = []
         for product_b in unique_products:
             print(f"Comparing Hotspots for {product_a} and {product_b}")
             geosat_flag = False
@@ -328,27 +328,21 @@ def process_nearest_points(
             gdf_b = hotspots_gdf[
                 hotspots_gdf["satellite_sensor_product"] == product_b
             ]
-            hotspots_compare_tasks += util.hotspots_compare(
+            product_a_df = util.hotspots_compare(
                 gdf_a,
                 gdf_b,
                 "solar_day",
                 geosat_flag,
                 swath_directory
             )
-
+            if product_a_df is not None:
+                nearest_hotspots_dfs.append(product_a_df)
         outfile = Path(outdir).joinpath(f"nearest_points.{product_a}.csv")
-        try:
-            product_a_nearest_gdfs_merged = pd.concat(
-                [df for df in dask.compute(*hotspots_compare_tasks) if df is not None],
-                ignore_index=True
-            )
-        except ValueError:
-            _LOG.info(f"Nothing to concatenate for: {product_a}")
-            continue
-
-        product_a_nearest_gdfs_merged.reset_index(inplace=True, drop=True)
-        product_a_nearest_gdfs_merged.to_csv(outfile.as_posix())
+        nearest_hotspots_dfs = pd.concat(nearest_hotspots_dfs, ignore_index=True)
+        nearest_hotspots_dfs.reset_index(inplace=True, drop=True)
+        nearest_hotspots_dfs.to_csv(outfile.as_posix())
         nearest_hotspots_product_files[product_a] = outfile
+
     return nearest_hotspots_product_files
 
 
@@ -457,7 +451,7 @@ def process_nearest_points(
     "--chunks",
     type=click.INT,
     help="Number of chunks to block geojson files used in multi-processing.",
-    default=10000,
+    default=1000,
     show_default=True,
 )
 def main(

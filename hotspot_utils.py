@@ -278,7 +278,7 @@ def hotspots_compare(
     column_name: str,
     geosat_flag: bool,
     swath_directory: Union[Path, str]
-) -> List[dask.delayed]:
+) -> Union[None, pd.DataFrame]:
     """Function compares sensor GeoDataFrame from two satellite sensor product.
 
     Subsets hotspots to common imaged area and determines points nearest to productA from hotspots_gdf.
@@ -291,11 +291,12 @@ def hotspots_compare(
     :param swath_directory: The parent directory to store the solar_date swath files.
 
     :returns:
-        delayed tasks to compute nearest hotspots from GeoDataFrame gdf_a and gdf_b.
+        GeoDataFrame of nearest hotspots
     """
 
-    nearest_hotspots_tasks = []
+    nearest_hotspots_df = []
     for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
+        index_a_tasks = []
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = str(index_a.date())
@@ -303,7 +304,7 @@ def hotspots_compare(
                 solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
                 if not solar_date_swath_directory.exists():
                     continue
-                nearest_hotspots_tasks.append(
+                index_a_tasks.append(
                     delayed(get_nearest_hotspots)(
                         gdf_ra,
                         gdf_rb,
@@ -311,7 +312,18 @@ def hotspots_compare(
                         solar_date_swath_directory
                     )
                 )
-    return nearest_hotspots_tasks
+        index_a_dfs = [df for df in dask.compute(*index_a_tasks) if df is not None]
+        if index_a_dfs:
+            index_a_df_merged = nearest_hotspots_df.append(
+                pd.concat(index_a_dfs, ignore_index=True)
+            )
+            nearest_hotspots_df.append(index_a_df_merged)
+    if nearest_hotspots_df:
+        return pd.concat(
+            nearest_hotspots_df,
+            ignore_index=True
+        )
+    return None
 
 
 def solar_day_start_stop_period(longitude_east, longitude_west, _solar_day):
