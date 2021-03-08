@@ -451,7 +451,7 @@ def process_nearest_points(
     "--chunks",
     type=click.INT,
     help="Number of chunks to block geojson files used in multi-processing.",
-    default=1000,
+    default=100,
     show_default=True,
 )
 def main(
@@ -484,7 +484,7 @@ def main(
         "landgate": landgate_frp,
         "dea": dea_frp,
     }
-    aws_session = boto3.Session(profile_name="s3vt")
+    aws_session = boto3.Session(profile_name="default")
     s3_client = aws_session.client("s3")
 
     # check if any files need to be download from s3
@@ -541,9 +541,9 @@ def main(
 if __name__ == "__main__":
     # Configure log here for now, move it to __init__ at top level once
     # code is configured to run as module
-    client = Client()
+    # client = Client(asynchronous=True)
     LOG_CONFIG = Path(__file__).parent.joinpath("logging.cfg")
     logging.config.fileConfig(LOG_CONFIG.as_posix())
     _LOG = logging.getLogger(__name__)
     main()
-    client.close()
+    # client.close()
