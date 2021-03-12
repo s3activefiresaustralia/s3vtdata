@@ -35,3 +35,4 @@ class FormatJSONL(logging.Formatter):
 
 
 ERROR_LOGGER = get_wrapped_logger("error")
+STATUS_LOGGER = get_wrapped_logger("status")

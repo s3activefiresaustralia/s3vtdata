@@ -3,12 +3,14 @@
 
 import logging
 import os
+import re
 import subprocess
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
 from typing import Tuple, Union, Optional, List, Dict
 
+import boto3
 import dask
 import dask.dataframe as dd
 import geopandas as gpd
@@ -17,6 +19,7 @@ import pandas as pd
 from dask import delayed
 from scipy.spatial import cKDTree
 from fiona.errors import DriverError
+from geopy.distance import distance
 
 _LOG = logging.getLogger(__name__)
 
@@ -60,6 +63,8 @@ __slstr_ignore_attrs__ = [
     "transmittance_SWIR",
     "used_channel",
 ]
+
+__s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 
 def get_satellite_swaths(
@@ -139,7 +144,7 @@ def pairwise_swath_intersect(
 
     Returns intersection geometry
     """
-    _LOG.info(
+    _LOG.debug(
         "Running intersection for " + str(satsensors_a) + " " + str(satsensors_b)
     )
     satsensors_a = [w.replace(" ", "_") for w in satsensors_a]
@@ -818,3 +823,159 @@ def get_all_hotspots_tasks(
             tasks = []
         hotspots_tasks += tasks
     return hotspots_tasks
+
+
+def _distance(df: pd.DataFrame) -> List:
+    """Helper method to compute distance.
+
+    :param df: The DataFrame to compute distance.
+
+    :returns:
+        List of distance computed from DataFrame.
+    """
+    dist = [
+        distance(
+            (x["latitude"], x["longitude"]),
+            (x["2_latitude"], x["2_longitude"]),
+        ).meters
+        for _, x in df.iterrows()
+    ]
+    return dist
+
+
+def csv_to_dataframe(
+    nearest_csv_files: List,
+    index_column: Optional[str] = "solar_day"
+) -> dd.DataFrame:
+    """Helper method to convert neareast hotspots csv files to dataframe.
+    
+    In this method, datetime fields are converted to pandas datetime type
+    and additional fields dist_m, timedelta and count are added.
+
+    :param nearest_csv_files: The List of nearest_hotspots csv files.
+    :param index_column: The column name to set the dataframe index.
+    
+    :returns:
+        Dask DataFrame with all the data from csv file concatenated and additional fields
+        required for analysis added. 
+    """
+
+    df_list_tasks = [
+        delayed(load_csv)
+        (fp)
+        for fp in nearest_csv_files
+        if Path(fp).exists()
+    ]
+    dfs = [df for df in dask.compute(*df_list_tasks)]
+    df = dd.concat(dfs)
+    df["dist_m"] = df.map_partitions(_distance)
+    df["datetime"] = dd.to_datetime(df["datetime"])
+    df["solar_day"] = dd.to_datetime(df["solar_day"])
+    df["solar_night"] = dd.to_datetime(df["solar_night"])
+    df["2_datetime"] = dd.to_datetime(df["2_datetime"])
+    df["timedelta"] = abs(df["datetime"] - df["2_datetime"])
+    df["count"] = 1
+    df = df.astype({"dist_m": float})
+    df = df.set_index("solar_day")
+    return df
+
+
+def to_timedelta(df: pd.DataFrame) -> pd.Series:
+    """Helper method to calculate time difference.
+
+    :param df: The DataFrame to compute distance
+
+    :returns:
+        The pandas Series object with computed time difference.
+    """
+
+    return abs(df["datetime"] - df["2_datetime"])
+
+
+def pandas_pivot_table(
+    df: pd.DataFrame,
+    index: List[str],
+    columns: List[str],
+    values: List[str],
+    aggfunc: dict,
+) -> pd.DataFrame:
+    """Helper method to perform pandas pivot operations.
+
+    :param df: The DataFrame to compute pivot operation.
+    :param index: The names of the columns to make new DataFrame's index.
+    :param columns: The names of columns to make new DataFrame's columns.
+    :param values: The columns to use for populating new frame's value.
+    :param aggfunc: The function to apply in pivot operation.
+
+    :returns:
+        The reshaped pandas DataFrame
+    """
+    _df = pd.pivot_table(
+        df,
+        values=values,
+        index=index,
+        aggfunc=aggfunc,
+        columns=columns,
+    )
+    return _df
+
+
+def dask_pivot_table(
+    df: dd.DataFrame,
+    index: str,
+    column: str,
+    values: str,
+    aggfunc: str,
+) -> dd.DataFrame:
+    """Helper method to perform dask dataframe pivot operations.
+
+    :param df: The DataFrame to compute pivot operation.
+    :param index: column to be index.
+    :param column: column to be columns.
+    :param values: column to aggregate.
+    :param aggfunc: The function to apply in pivot operation.
+
+    :returns:
+        The reshaped dask DataFrame
+    """
+    df = df.categorize(columns=[index, column])
+    _df = dd.reshape.pivot_table(
+        df, index=index, columns=column, values=values, aggfunc=aggfunc
+    )
+    return _df
+
+
+def fetch_hotspots_files(
+    hotspots_files_dict: dict,
+    s3_client: boto3.Session.client,
+    outdir: Union[Path, str]
+) -> Dict:
+    """Utility to download hotspots files from s3 location.
+    
+    :param hotspots_files: The hotspots files dictionary with key as a hotspots
+                           file provider name and value as a file location. The
+                           files are only downloaded if the file path matches
+                           s3 pattern. Eg. s3://<bucket>/<key>
+    :param s3_client: The boto3 s3 client that has previleges to download files
+                      from s3 files location.
+    :param outdir: The output directory to store the files downloaded from s3.
+    
+    :returns:
+        The dictionary with same key in hotspots_files_dict and values replaced
+        with the downloaded file-location in the local directory.
+    """
+    hotspots_files = dict()
+    for provider, fp in hotspots_files_dict.items():
+        if fp is None:
+            _LOG.info(f"{provider} Hotspots FRP  is None. excluding from analysis.")
+            continue
+        if re.match(__s3_pattern__, str(fp)):
+            _, bucket, _key, _ = re.split(__s3_pattern__, str(fp))
+            outfile = Path(outdir).joinpath(Path(fp).name)
+            hotspots_files[provider] = outfile
+            if outfile.exists():
+                _LOG.info(f"{fp} exists: skipped download")
+                continue
+            _LOG.info(f"downloading {fp} to {outfile.as_posix()}")
+            s3_client.download_file(bucket, _key, outfile.as_posix())
+    return hotspots_files
