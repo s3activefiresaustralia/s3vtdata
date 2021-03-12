@@ -17,9 +17,9 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from dask import delayed
-from scipy.spatial import cKDTree
 from fiona.errors import DriverError
 from geopy.distance import distance
+from scipy.spatial import cKDTree
 
 _LOG = logging.getLogger(__name__)
 
@@ -798,7 +798,7 @@ def get_all_hotspots_tasks(
     for name, fid in input_files_dict.items():
         if fid is None:
             continue
-        _LOG.info(f"reading and subsetting GeoDataFrame for {name}: {fid}")
+        _LOG.info(f"reading and sub-setting GeoDataFrame for {name}: {fid}")
         kwargs = {
             "bbox": bbox,
             "start_time": start_time,
@@ -876,7 +876,7 @@ def csv_to_dataframe(
     df["timedelta"] = abs(df["datetime"] - df["2_datetime"])
     df["count"] = 1
     df = df.astype({"dist_m": float})
-    df = df.set_index("solar_day")
+    df = df.set_index(index_column)
     return df
 
 
@@ -952,7 +952,7 @@ def fetch_hotspots_files(
 ) -> Dict:
     """Utility to download hotspots files from s3 location.
     
-    :param hotspots_files: The hotspots files dictionary with key as a hotspots
+    :param hotspots_files_dict: The hotspots files dictionary with key as a hotspots
                            file provider name and value as a file location. The
                            files are only downloaded if the file path matches
                            s3 pattern. Eg. s3://<bucket>/<key>

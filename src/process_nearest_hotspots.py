@@ -2,24 +2,20 @@
 
 import logging.config
 import os
-import re
 from pathlib import Path
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union, List
 
 import boto3
 import click
 import dask
-import dask.dataframe as dd
-import pandas as pd
-from dask.distributed import Client, LocalCluster
-from geopy.distance import distance
-
 import hotspot_utils as util
+import pandas as pd
 
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 _LOG = logging.getLogger(__name__)
-    
+
+
 def process_nearest_points(
     nasa_frp: Union[Path, str],
     esa_frp: Union[Path, str],
