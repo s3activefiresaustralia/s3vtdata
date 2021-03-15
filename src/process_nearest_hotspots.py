@@ -4,13 +4,15 @@ import logging.config
 import os
 import re
 from pathlib import Path
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union, Dict, List, Tuple
 
 import boto3
 import click
 import dask
 import dask.dataframe as dd
 import pandas as pd
+import geopandas as gpd
+
 from dask.distributed import Client, LocalCluster
 from geopy.distance import distance
 
@@ -34,7 +36,7 @@ def process_hotspots_gdf(
     bbox: Optional[Tuple[float, float, float, float]] = None,
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
-) -> gpd.DataFrame:
+) -> gpd.GeoDataFrame:
     
     """Method to subset, merge and normalize FRP from nasa, esa, eumetsat, landgate and dea.
     
@@ -180,10 +182,10 @@ def process_nearest_points(
         eumetsat_frp=eumetsat_frp,
         landgate_frp=landgate_frp,
         dea_frp=dea_frp,
-        start_date: str,
-        end_date: str,
-        start_time: str,
-        end_time: str,
+        start_date=start_date,
+        end_date=end_date,
+        start_time=start_time,
+        end_time=end_time,
         bbox=(lon_west, lat_south, lon_east, lat_north),
         chunks=chunks,
         outdir=outdir,
