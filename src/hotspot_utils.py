@@ -205,7 +205,7 @@ def get_nearest_hotspots(
 
     :returns:
         None if no intersections or fails in pairwise swath intersects.
-        GeoDataFrame from cdknearest method.
+        GeoDataFrame from ckdnearest method.
     """
     if not geosat_flag:
         try:
@@ -236,7 +236,7 @@ def get_nearest_hotspots(
         gdfb.reset_index(drop=True, inplace=True)
 
     if gdfa.empty | gdfb.empty:
-        _LOG.debug("Nothing to input to cdknearest")
+        _LOG.debug("Nothing to input to ckdnearest")
         return None
 
     nearest_hotspots = ckdnearest(gdfa, gdfb)
@@ -1039,7 +1039,7 @@ def process_hotspots_gdf(
     aws_session = boto3.Session()
     s3_client = aws_session.client("s3")
     _LOG.info("Fetching FRP datasets...")
-    hotspots_files = util.fetch_hotspots_files(
+    hotspots_files = fetch_hotspots_files(
         hotspots_files_dict,
         s3_client,
         outdir
@@ -1057,11 +1057,11 @@ def process_hotspots_gdf(
     _LOG.info(
         "Reading..."
     )
-    all_hotspots_tasks = util.get_all_hotspots_tasks(
+    all_hotspots_tasks = get_all_hotspots_tasks(
         hotspots_files, **process_kwargs
     )
     attrs_normalization_tasks = [
-        dask.delayed(util.normalize_features)(df) for df in all_hotspots_tasks
+        dask.delayed(normalize_features)(df) for df in all_hotspots_tasks
     ]
 
     _LOG.info("Merging...")
