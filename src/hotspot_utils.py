@@ -66,6 +66,9 @@ __slstr_ignore_attrs__ = [
 
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
+# swathpredict.py must exsist in the same directory as this file.
+swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
+
 
 def get_satellite_swaths(
     configuration: Union[Path, str],
@@ -100,15 +103,15 @@ def get_satellite_swaths(
         + str(
             [
                 "python",
-                "swathpredict.py",
+                swathpredict_py.as_posix(),
                 "--configuration",
-                configuration,
+                Path(configuration).as_posix(),
                 "--start",
                 start,
                 "--period",
                 period,
                 "--output_path",
-                solar_date_swath_dir.as_posix(),
+                Path(solar_date_swath_dir).as_posix(),
             ]
         )
     )
@@ -116,19 +119,20 @@ def get_satellite_swaths(
         subprocess.check_call(
             [
                 "python",
-                "swathpredict.py",
+                swathpredict_py.as_posix(),
                 "--configuration",
-                configuration,
+                Path(configuration).as_posix(),
                 "--start",
                 start,
                 "--period",
                 period,
                 "--output_path",
-                solar_date_swath_dir.as_posix(),
+                Path(solar_date_swath_dir).as_posix(),
             ]
         )
         return True
     except Exception as err:
+        print(err)
         _LOG.debug(f"Swath generation failed with err: {err}")
 
     return False

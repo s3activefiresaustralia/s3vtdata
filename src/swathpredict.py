@@ -5,7 +5,7 @@ import logging
 import os
 import shutil
 import sys
-
+from pathlib import Path
 import git
 
 parser = argparse.ArgumentParser()
@@ -1226,7 +1226,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     # Configure Jinja for HTML templating
-    file_loader = FileSystemLoader("templates")
+    path_to_templates = Path(__file__).resolve()
+    path_to_templates = path_to_templates.parent.parent.joinpath("templates")
+    file_loader = FileSystemLoader(path_to_templates.as_posix())
     env = Environment(loader=file_loader)
     template = env.get_template("template.html")
 

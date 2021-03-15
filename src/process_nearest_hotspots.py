@@ -16,7 +16,7 @@ import geopandas as gpd
 from dask.distributed import Client, LocalCluster
 from geopy.distance import distance
 
-import hotspot_utils as util
+import src.hotspot_utils as util
 
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
@@ -141,7 +141,7 @@ def process_nearest_points(
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
     compare_field: Optional[str] = "solar_day",
-    swath_config_file: Optional[Union[Path, str]] = "s3vtconfig.yaml"
+    swath_config_file: Optional[Union[Path, str]] = None
 ) -> List:
     """Processing of nearest points for different products in hotpots.
 
@@ -174,6 +174,9 @@ def process_nearest_points(
     
     if not Path(outdir).exists():
         Path(outdir).mkdir(exist_ok=True)
+    
+    if swath_config_file is None:
+        swath_config_file = Path(__file__).parent.parent.joinpath("configs", "s3vtconfig.yaml")
     
     _LOG.info(f"Processing FRP Hotspots Datasets")
     hotspots_gdf = process_hotspots_gdf(
@@ -384,7 +387,8 @@ def main(
     end_time: str,
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
-    compare_field: Optional[str] = "solar_day"
+    compare_field: Optional[str] = "solar_day",
+    
 ) -> List:
     
     processing_parameters = {
@@ -413,8 +417,5 @@ if __name__ == "__main__":
     # Configure log here for now, move it to __init__ at top level once
     # code is configured to run as module
     # client = Client(asynchronous=True)
-    LOG_CONFIG = Path(__file__).parent.joinpath("logging.cfg")
-    logging.config.fileConfig(LOG_CONFIG.as_posix())
-    _LOG = logging.getLogger(__name__)
     main()
     # client.close()
