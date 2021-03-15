@@ -68,7 +68,9 @@ __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 # swathpredict.py must exsist in the same directory as this file.
 swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
-
+if not swathpredict_py.exists():
+    raise FileNotFoundError(f"swathpredict.py must exsist in {Path(__file__).parent.as_posix}")
+    
 
 def get_satellite_swaths(
     configuration: Union[Path, str],
@@ -983,3 +985,104 @@ def fetch_hotspots_files(
             _LOG.info(f"downloading {fp} to {outfile.as_posix()}")
             s3_client.download_file(bucket, _key, outfile.as_posix())
     return hotspots_files
+
+
+def process_hotspots_gdf(
+    nasa_frp: Optional[Union[Path, str]] = None,
+    esa_frp: Optional[Union[Path, str]] = None,
+    eumetsat_frp: Optional[Union[Path, str]] = None,
+    landgate_frp: Optional[Union[Path, str]] = None,
+    dea_frp: Optional[Union[Path, str]] = None,
+    start_date: Optional[str] = "2020-01-01",
+    end_date: Optional[str] = "2020-12-31",
+    start_time: Optional[str] = "21:00",
+    end_time: Optional[str] = "03:00",
+    bbox: Optional[Tuple[float, float, float, float]] = None,
+    chunks: Optional[int] = 100,
+    outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
+) -> gpd.GeoDataFrame:
+    
+    """Method to subset, merge and normalize FRP from nasa, esa, eumetsat, landgate and dea.
+    
+    This process will temporally and spatially subset the data and merge all the hotspots GeoDataFrame
+    to have consistent fields among different hotspots products provider: dea, landgate, esa, eumetsat and nasa.
+    
+    :param nasa_frp: The path to NASA FRP .geojson file.
+    :param esa_frp: The path to ESA FRP .geojson file.
+    :param eumetsat_frp: The path to EUMETSAT .geojson file.
+    :param landgate_frp: The path to LANDGATE .geojson file.
+    :param dea_frp: The path to DEA .geojson file.
+    :param start_time: The start time to subset the data.
+    :param end_time: The end time to subset the data.
+    :param start_date: The start date to subset the data.
+    :param end_date: The end date to subset the data
+    :param bbox: The bounding box to subset the data.
+    :param chunks: The number of blocks data is sub-divided into to enable multi-processing.
+    :param outdir: The output directory to store outputs.
+    
+    :returns:
+        Merged GeoDataFrame.
+    """
+    # make a work directory if it does not exist.
+    if not Path(outdir).exists():
+        Path(outdir).mkdir(exist_ok=True)
+
+    # this sections is to download frp geojson from location provided is in s3
+    hotspots_files_dict = {
+        "nasa": nasa_frp,
+        "esa": esa_frp,
+        "eumetsat": eumetsat_frp,
+        "landgate": landgate_frp,
+        "dea": dea_frp,
+    }
+    
+    aws_session = boto3.Session()
+    s3_client = aws_session.client("s3")
+    _LOG.info("Fetching FRP datasets...")
+    hotspots_files = util.fetch_hotspots_files(
+        hotspots_files_dict,
+        s3_client,
+        outdir
+    )
+    
+    process_kwargs = {
+        "bbox": bbox,
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_time": start_time,
+        "end_time": end_time,
+        "num_chunks": chunks,
+    }
+
+    _LOG.info(
+        "Reading..."
+    )
+    all_hotspots_tasks = util.get_all_hotspots_tasks(
+        hotspots_files, **process_kwargs
+    )
+    attrs_normalization_tasks = [
+        dask.delayed(util.normalize_features)(df) for df in all_hotspots_tasks
+    ]
+
+    _LOG.info("Merging...")
+    hotspots_gdf = pd.concat(
+        [df for df in dask.compute(*attrs_normalization_tasks)]
+    )
+    _LOG.info(
+        f"The merged hotspots dataframe head:\n {hotspots_gdf.head()}"
+    )
+    _LOG.info(
+        f"The merged hotspots dataframe count:\n {hotspots_gdf.count()}"
+        
+    )
+    _LOG.info("The spatial and temporal extents of merged hotspots.")
+    _LOG.info(
+        f"minimum datetime: {hotspots_gdf['datetime'].min()}, maximum datetime: {hotspots_gdf['datetime'].max()}"
+    )
+    _LOG.info(
+        f"longitude range: {hotspots_gdf['longitude'].min()}  to {hotspots_gdf['longitude'].max()}"
+    )
+    _LOG.info(
+        f"latitude range: {hotspots_gdf['latitude'].min()}  to {hotspots_gdf['latitude'].max()}"
+    )
+    return hotspots_gdf
