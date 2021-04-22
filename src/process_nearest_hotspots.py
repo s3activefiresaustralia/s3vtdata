@@ -23,6 +23,55 @@ __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 _LOG = logging.getLogger(__name__)
 
 
+def unique_product_hotspots(
+    product_a: str,
+    all_hotspots_gdf: gpd.DataFrame,
+    compare_field: str,
+    swath_directory: Union[Path, str],
+    outfile: Union[Path, str],
+) -> Union[Path, None]:
+    """Helper method to compute nearest hotspots for unique product.
+    
+    :param product_a: The product_a to compare against all the products.
+    :param all_hotspots_gdf: The GeoDataFrame with all the hotspots datasets.
+    :param compare_field: The solar_day or solar_night.
+    :param swath_directory: The directory where swath data are stored.
+    :param outfile: The csv outfile to save the nearest hotspots result for product_a
+    
+    :returns:
+        None if no nearest hotspots are present.
+        The output file path if nearest hotspots are present.
+    """
+    unique_products = [p for p in all_hotspots_gdf["satellite_sensor_product"].unique()]
+    nearest_hotspots_dfs = []
+    gdf_a = hotspots_gdf[
+        hotspots_gdf["satellite_sensor_product"] == product_a
+    ]
+    for product_b in unique_products:
+        _LOG.info(f"Comparing Hotspots for {product_a} and {product_b}")
+        geosat_flag = False
+        if ("AHI" in [product_a, product_b]) or ("INS1" in [product_a, product_b]):
+            geosat_flag = True
+        gdf_b = hotspots_gdf[
+            hotspots_gdf["satellite_sensor_product"] == product_b
+        ]
+        product_a_df = util.hotspots_compare(
+            gdf_a,
+            gdf_b,
+            compare_field,
+            geosat_flag,
+            swath_directory
+        )
+        if product_a_df is not None:
+            nearest_hotspots_dfs.append(product_a_df)
+    if not nearest_hotspots_dfs:
+        return None
+    nearest_hotspots_dfs = pd.concat(nearest_hotspots_dfs, ignore_index=True)
+    nearest_hotspots_dfs.reset_index(inplace=True, drop=True)
+    nearest_hotspots_dfs.to_csv(outfile.as_posix())
+    return outfile
+
+
 def process_nearest_points(
     nasa_frp: Union[Path, str],
     esa_frp: Union[Path, str],
@@ -40,7 +89,7 @@ def process_nearest_points(
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
     compare_field: Optional[str] = "solar_day",
-    swath_config_file: Optional[Union[Path, str]] = None
+    swath_config_file: Optional[Union[Path, str]] = None,
 ) -> List:
     """Processing of nearest points for different products in hotpots.
 
@@ -66,7 +115,6 @@ def process_nearest_points(
     :param outdir: The output directory to save the output files.
     :param compare_field: The field (column) used in finding the nearest hotspots.
     :param swath_config_file: The config file used in swath generation.
-    
     :returns:
         All the .csv output files path containing the nearest hotspots.
     """
@@ -116,44 +164,19 @@ def process_nearest_points(
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
     ]
-    nearest_hotspots_product_files = []
+    all_product_tasks = []
     for product_a in unique_products:
         outfile = Path(outdir).joinpath(f"nearest_points_{product_a}_{compare_field}.csv")
         if outfile.exists():
-            _LOG.info(
+            print(
                 f"{outfile.as_posix()} exists. skipped nearest"
                 f" hotspots processing for product {product_a}."
                 " Same file will be used in analysis."
             )
-        else:
-            gdf_a = hotspots_gdf[
-                hotspots_gdf["satellite_sensor_product"] == product_a
-            ]
-            nearest_hotspots_dfs = []
-            for product_b in unique_products:
-                _LOG.info(f"Comparing Hotspots for {product_a} and {product_b}")
-                geosat_flag = False
-                if ("AHI" in [product_a, product_b]) or ("INS1" in [product_a, product_b]):
-                    geosat_flag = True
-                gdf_b = hotspots_gdf[
-                    hotspots_gdf["satellite_sensor_product"] == product_b
-                ]
-                product_a_df = util.hotspots_compare(
-                    gdf_a,
-                    gdf_b,
-                    compare_field,
-                    geosat_flag,
-                    swath_directory
-                )
-                if product_a_df is not None:
-                    nearest_hotspots_dfs.append(product_a_df)
-            nearest_hotspots_dfs = pd.concat(nearest_hotspots_dfs, ignore_index=True)
-            nearest_hotspots_dfs.reset_index(inplace=True, drop=True)
-            nearest_hotspots_dfs.to_csv(outfile.as_posix())
-        nearest_hotspots_product_files.append(outfile)
-
-    return nearest_hotspots_product_files
-
+        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, "solar_day", swath_directory, outfile))
+    outfiles = [fid for fid in dask.compute(*all_product_tasks) if fid is not None]
+    return outfiles
+    
 
 @click.command(
     "process-nearest-hotspots", help="Processing of the nearest hotspots."
