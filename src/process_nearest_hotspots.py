@@ -25,12 +25,12 @@ _LOG = logging.getLogger(__name__)
 
 def unique_product_hotspots(
     product_a: str,
-    all_hotspots_gdf: gpd.DataFrame,
+    all_hotspots_gdf: gpd.GeoDataFrame,
     compare_field: str,
     swath_directory: Union[Path, str],
     outfile: Union[Path, str],
 ) -> Union[Path, None]:
-    """Helper method to compute nearest hotspots for unique product.
+    """Helper method to compute nearest hotspots for a unique product_a.
     
     :param product_a: The product_a to compare against all the products.
     :param all_hotspots_gdf: The GeoDataFrame with all the hotspots datasets.
@@ -44,16 +44,16 @@ def unique_product_hotspots(
     """
     unique_products = [p for p in all_hotspots_gdf["satellite_sensor_product"].unique()]
     nearest_hotspots_dfs = []
-    gdf_a = hotspots_gdf[
-        hotspots_gdf["satellite_sensor_product"] == product_a
+    gdf_a = all_hotspots_gdf[
+        all_hotspots_gdf["satellite_sensor_product"] == product_a
     ]
     for product_b in unique_products:
         _LOG.info(f"Comparing Hotspots for {product_a} and {product_b}")
         geosat_flag = False
         if ("AHI" in [product_a, product_b]) or ("INS1" in [product_a, product_b]):
             geosat_flag = True
-        gdf_b = hotspots_gdf[
-            hotspots_gdf["satellite_sensor_product"] == product_b
+        gdf_b = all_hotspots_gdf[
+            all_hotspots_gdf["satellite_sensor_product"] == product_b
         ]
         product_a_df = util.hotspots_compare(
             gdf_a,
@@ -168,12 +168,13 @@ def process_nearest_points(
     for product_a in unique_products:
         outfile = Path(outdir).joinpath(f"nearest_points_{product_a}_{compare_field}.csv")
         if outfile.exists():
-            print(
+            _LOG.info(
                 f"{outfile.as_posix()} exists. skipped nearest"
                 f" hotspots processing for product {product_a}."
                 " Same file will be used in analysis."
             )
-        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, "solar_day", swath_directory, outfile))
+            continue
+        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_directory, outfile))
     outfiles = [fid for fid in dask.compute(*all_product_tasks) if fid is not None]
     return outfiles
     
