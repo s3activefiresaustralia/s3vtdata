@@ -158,6 +158,10 @@ def process_nearest_points(
         swath_directory=swath_directory,
         config_file=swath_config_file
     )
+    
+    # Compute swath genration tasks sequentially.
+    # for swath_task in swath_generation_tasks:
+    #     swath_task.compute()
     _ = dask.compute(*swath_generation_tasks)
 
     _LOG.info(f"Generating neareast hotspots...")
