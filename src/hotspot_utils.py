@@ -478,6 +478,7 @@ def temporal_subset_df(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset the data
 
@@ -486,12 +487,16 @@ def temporal_subset_df(
     :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data.
+    :param index_col: The datetime column to be set as an index col.
 
     :returns:
         The temporally subsetted GeoDataFrame
     """
     # create solar day as a the datetime index
-    df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
+    if index_col == "solar_day":
+        df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
+    else:
+        df = df.set_index(pd.DatetimeIndex(df.solar_night.values))
 
     if (start_date is not None) & (end_date is not None):
         df = df.loc[start_date:end_date]
@@ -536,6 +541,7 @@ def modis_viirs_temporal_subset_normalize(
     end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset and normalize features attributes for MODIS and VIIRS product.
 
@@ -544,6 +550,7 @@ def modis_viirs_temporal_subset_normalize(
     :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
+    :param index_col: The datetime column to be set as an index col.
 
     :returns:
         The subsetted GeoDataFrame.
@@ -552,7 +559,7 @@ def modis_viirs_temporal_subset_normalize(
     gdf["solar_day"] = pd.to_datetime(gdf["solar_day"])
     gdf["solar_night"] = gdf["solar_day"] - pd.Timedelta(hours=12)
 
-    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date)
+    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date, index_col)
     return gdf
 
 
@@ -563,6 +570,7 @@ def slstr_temporal_subset_normalize(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     provider: Optional[str] = None,
+    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset and normalize features attributes for SLSTR product.
 
@@ -572,6 +580,8 @@ def slstr_temporal_subset_normalize(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param provider: The hotspots algorithm associated provider.
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         The subsetted GeoDataFrame.
     """
@@ -594,7 +604,7 @@ def slstr_temporal_subset_normalize(
         raise ValueError(f"Provider must be esa or eumetsat: not {provider}")
 
     gdf.rename(columns={"F1_Fire_pixel_radiance": "power"}, inplace=True)
-    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date)
+    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date, index_col)
     return gdf
 
 
@@ -606,6 +616,7 @@ def process_nasa_hotspots(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize feature attributes for NASA product.
 
@@ -616,7 +627,8 @@ def process_nasa_hotspots(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
     """
@@ -626,7 +638,7 @@ def process_nasa_hotspots(
     gdf_tasks = []
     for df in gdf_chunks:
         task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date
+            df, start_time, end_time, start_date, end_date, index_col
         )
         gdf_tasks.append(task)
     return gdf_tasks
@@ -640,6 +652,7 @@ def process_dea_hotspots(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize features attributes for DEA product.
 
@@ -650,7 +663,8 @@ def process_dea_hotspots(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+   
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and
         normalize features."""
@@ -660,7 +674,7 @@ def process_dea_hotspots(
     gdf_tasks = []
     for df in gdf_chunks:
         task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date
+            df, start_time, end_time, start_date, end_date, index_col
         )
         gdf_tasks.append(task)
     return gdf_tasks
@@ -674,6 +688,7 @@ def process_landgate_hotspots(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method load and normalize features attributes for Landgate product.
 
@@ -684,7 +699,8 @@ def process_landgate_hotspots(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and
         normalize features.
@@ -695,7 +711,7 @@ def process_landgate_hotspots(
     gdf_tasks = []
     for df in gdf_chunks:
         task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date
+            df, start_time, end_time, start_date, end_date, index_col
         )
         gdf_tasks.append(task)
     return gdf_tasks
@@ -709,6 +725,7 @@ def process_eumetsat_hotspots(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize features attributes for EUMETSAT product.
 
@@ -719,7 +736,8 @@ def process_eumetsat_hotspots(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and
         normalize features.
@@ -732,7 +750,7 @@ def process_eumetsat_hotspots(
     gdf_tasks = []
     for df in gdf_chunks:
         task = delayed(slstr_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, "eumetsat"
+            df, start_time, end_time, start_date, end_date, "eumetsat", index_col
         )
         gdf_tasks.append(task)
     return gdf_tasks
@@ -746,6 +764,7 @@ def process_esa_hotspots(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method load, subset and normalize features attributes for ESA product.
 
@@ -756,7 +775,8 @@ def process_esa_hotspots(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
     """
@@ -768,7 +788,7 @@ def process_esa_hotspots(
     gdf_tasks = []
     for df in gdf_chunks:
         task = delayed(slstr_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, "esa"
+            df, start_time, end_time, start_date, end_date, "esa", index_col
         )
         gdf_tasks.append(task)
     return gdf_tasks
@@ -782,6 +802,7 @@ def get_all_hotspots_tasks(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
+    index_col: Optional[int] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to prepare hotspots geo dataframes from input geojson files.
 
@@ -796,7 +817,8 @@ def get_all_hotspots_tasks(
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-
+    :param index_col: The datetime column to be set as an index col.
+    
     :returns:
         The List of all dask delayed tasks that would return GeoDataFrame
     """
@@ -812,6 +834,7 @@ def get_all_hotspots_tasks(
             "start_date": start_date,
             "end_date": end_date,
             "num_chunks": num_chunks,
+            "index_col": index_col
         }
 
         if name == "nasa":
@@ -1000,6 +1023,7 @@ def process_hotspots_gdf(
     bbox: Optional[Tuple[float, float, float, float]] = None,
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
+    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     
     """Method to subset, merge and normalize FRP from nasa, esa, eumetsat, landgate and dea.
@@ -1019,6 +1043,7 @@ def process_hotspots_gdf(
     :param bbox: The bounding box to subset the data.
     :param chunks: The number of blocks data is sub-divided into to enable multi-processing.
     :param outdir: The output directory to store outputs.
+    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         Merged GeoDataFrame.
