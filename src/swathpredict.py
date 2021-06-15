@@ -29,6 +29,7 @@ import simplekml
 import folium
 from folium import plugins
 from colour import Color
+import uuid
 
 parser.add_argument('--configuration', dest='configuration', default='config.yaml',help='ground station configuration')
 parser.add_argument('--start', dest='start', help='start time YYYY-MM-DDTHH:MM:SSZ format')
@@ -759,7 +760,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
     
     
     while lostime <= (passes_begin_time + timedelta(minutes=passes_period)):
-        
+        tlestxt = uuid.uuid1().hex
         # get TLE for satellite
         
         df = tledf[tledf['TLE_LINE0'].str.contains(satellite_name)]
@@ -771,7 +772,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
         tle[2] = lostle['TLE_LINE2'].values[0]
         
        
-        with open('tles.txt', 'w') as f:
+        with open(tlestxt, 'w') as f:
             for i in tle:
                 f.write(tle[i])
                 f.write('\n')
@@ -779,9 +780,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
         
         satname = get_satellite_name(tle)
         sat = ephem.readtle(tle[0], tle[1], tle[2])
-
+        
         # Report currency of TLE
-        twole = tlefile.read(tle[0], 'tles.txt')
+        twole = tlefile.read(tle[0], tlestxt)
         now = datetime.utcnow()
         timesinceepoch = now - twole.epoch.astype(datetime)
 
@@ -797,8 +798,8 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
         oi = float(tle[2][9:16])      
         
-        orb = Orbital(tle[0], "tles.txt", tle[1], tle[2])
-
+        orb = Orbital(tle[0], tlestxt, tle[1], tle[2])
+        os.remove(tlestxt)
         rt, ra, tt, ta, st, sa = observer.next_pass(sat)
 
         # Confirm that observer details have been computed i.e. are not 'Null'
@@ -1167,3 +1168,5 @@ if __name__ == '__main__':
         
         logging.info(str([i, start, period]))
         get_upcoming_passes(i, start, period)
+
+
