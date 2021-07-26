@@ -9,6 +9,7 @@ from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
 from typing import Tuple, Union, Optional, List, Dict
+import shutil
 
 import boto3
 import dask
@@ -63,7 +64,6 @@ __slstr_ignore_attrs__ = [
     "transmittance_SWIR",
     "used_channel",
 ]
-
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 # swathpredict.py must exsist in the same directory as this file.
@@ -139,8 +139,19 @@ def get_satellite_swaths(
 
     return False
 
+def _swath_intersect(
+    sensor_a, 
+    sensor_b,
+    start_datetime_utc,
+    end_datetime_utc,
+    all_geojson_dataframe_from_swath_generation,
+):
+    # get common geometry between sensor a and sensor b between start and end datetime.
+    # return that common geometry.
+    pass
+    
 
-def pairwise_swath_intersect(
+def _pairwise_swath_intersect(
     satsensors_a: set,
     satsensors_b: set,
     swath_directory: Union[Path, str]
@@ -209,6 +220,7 @@ def get_nearest_hotspots(
     """
     if not geosat_flag:
         try:
+            # TODO get the common geometry
             gpd1, gpd2 = pairwise_swath_intersect(
                 set(gdfa["satellite"]), set(gdfb["satellite"]), swath_directory
             )
@@ -220,6 +232,8 @@ def get_nearest_hotspots(
         gpd2 = gpd2.unary_union
 
         intersection = gpd1.intersection(gpd2)
+        # TODO call _swath_intersect to get common geometry and pass the intersection geometry
+        
         if intersection is None:
             _LOG.debug(f"Intersection is None for {swath_directory.name}")
             return None
@@ -242,6 +256,72 @@ def get_nearest_hotspots(
     nearest_hotspots = ckdnearest(gdfa, gdfb)
 
     return nearest_hotspots
+
+
+def concat_swath_gdf(
+    swath_dir: Path,
+    archive: Optional[bool] = True
+):
+    """Method to concatenate all the swath geometry into a single GeoDataFrame.
+    
+    :param swath_dir: The parent directory where daily folders with the swath files are located.
+        example: /home/jovyan/s3vt_dask/s3vtdata/workdir/swaths_154_147
+    
+    return:
+        GeoDataFrame from all the available files in daily swath directory
+    """
+    swath_files = []
+    for dt_dir in swath_dir.iterdir():
+        for fp in dt_dir.iterdir():
+            if fp.name.endswith('swath.geojson'):
+                swath_files.append(fp)
+    
+    swath_gdf = pd.concat([gpd.read_file(fp) for fp in swath_files], ignore_index=True)
+    keys_map = {
+        'Satellite': 'Satellite',
+        'Sensor': 'Sensor',
+        'Orbit number': 'OrbitNumber',
+        'Orbit height': 'OrbitHeight',
+        'Acquisition of Signal UTC': 'AcquisitionOfSignalUTC',
+        'Acquisition of Signal Local': 'AcquisitionOfSignalLocal',
+        'Loss of Signal UTC': 'LossOfSignalUTC',
+        'Transit time': 'TransitTime',
+        'Node': 'Node',
+        'geometry': 'geometry'
+    
+    }
+    map_keys = {}
+    for k, v in keys_map.items():
+        for c in swath_gdf.columns:
+            if k in c:
+                map_keys[v] = c
+    
+    swath_gdf = swath_gdf.rename(columns={v:k for k, v in map_keys.items()})
+    swath_gdf["AcquisitionOfSignalUTC"] = pd.to_datetime(swath_gdf["AcquisitionOfSignalUTC"])
+    
+    if archive:
+        shutil.make_archive(Path(swath_dir).parent.joinpath(Path(swath_dir).name), 'zip', swath_dir)
+        print(f"{swath_dir} has been archived. Delete the swath files manually.")
+    return swath_gdf
+
+
+def pairwise_swath_intersect(
+    swath_gdf: gpd.GeoDataFrame,
+    sensor_a: str,
+    sensor_b: str,
+    start_datetime: datetime.datetime,
+    end_datetime: datetime.datetime
+):
+    """Method to generate pairwise_swath_intersect.
+    
+    """
+    dt_subset_df = swath_gdf[(swath_gdf['AcquisitionOfSignalUTC'] > start_dt) & (swath_gdf['AcquisitionOfSignalUTC'] <= end_dt)]
+    sensor_a_subset = dt_subset_df[dt_subset_df['Satellite'] == sensor_a]
+    sensor_b_subset = dt_subset_df[dt_subset_df['Satellite'] == sensor_b]
+    sensor_a_geom = sensor_a_subset.unary_union
+    sensor_b_geom = sensor_b_subset.unary_union
+    intersection = sensor_a_geom.intersection(sensor_b_geom)
+    return intersection
 
 
 def swath_generation_tasks(
@@ -312,7 +392,9 @@ def hotspots_compare(
             if index_a == index_b:
                 solar_date = str(index_a.date())
                 # skip if swath directory for the solar_date is missing.
+                # TODO need to read combined geometry into a common dataframes
                 solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
+                
                 if not solar_date_swath_directory.exists():
                     continue
                 index_a_tasks.append(
@@ -496,8 +578,8 @@ def temporal_subset_df(
     if index_col == "solar_day":
         df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
     else:
-        df = df.set_index(pd.DatetimeIndex(df.solar_night.values))
-
+        raise NotImplementedError(f"index_col '{index_col}' not implemented")
+        
     if (start_date is not None) & (end_date is not None):
         df = df.loc[start_date:end_date]
     if (start_time is not None) & (end_time is not None):
@@ -905,7 +987,7 @@ def csv_to_dataframe(
     df["timedelta"] = abs(df["datetime"] - df["2_datetime"])
     df["count"] = 1
     df = df.astype({"dist_m": float})
-    df = df.set_index("solar_day")
+    df = df.set_index(index_column)
     return df
 
 
