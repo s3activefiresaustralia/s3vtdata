@@ -29,6 +29,8 @@ def unique_product_hotspots(
     compare_field: str,
     swath_directory: Union[Path, str],
     outfile: Union[Path, str],
+    start_time: str,
+    end_time: str,
 ) -> Union[Path, None]:
     """Helper method to compute nearest hotspots for a unique product_a.
     
@@ -37,11 +39,16 @@ def unique_product_hotspots(
     :param compare_field: The solar_day or solar_night.
     :param swath_directory: The directory where swath data are stored.
     :param outfile: The csv outfile to save the nearest hotspots result for product_a
+    :param start_time: The start time to subset the data.
+    :param end_time: The end time to subset the data.
     
     :returns:
         None if no nearest hotspots are present.
         The output file path if nearest hotspots are present.
     """
+    # Create concatenated swath GeoDataFrame from the daily swath geometry.
+    swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=False)
+        
     unique_products = [p for p in all_hotspots_gdf["satellite_sensor_product"].unique()]
     nearest_hotspots_dfs = []
     gdf_a = all_hotspots_gdf[
@@ -60,10 +67,13 @@ def unique_product_hotspots(
             gdf_b,
             compare_field,
             geosat_flag,
-            swath_directory
+            swath_gdf,
+            start_time,
+            end_time
         )
         if product_a_df is not None:
             nearest_hotspots_dfs.append(product_a_df)
+            
     if not nearest_hotspots_dfs:
         return None
     nearest_hotspots_dfs = pd.concat(nearest_hotspots_dfs, ignore_index=True)
@@ -162,8 +172,8 @@ def process_nearest_points(
     # Compute swath genration tasks sequentially.
     # for swath_task in swath_generation_tasks:
     #     swath_task.compute()
+    
     _ = dask.compute(*swath_generation_tasks)
-
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
