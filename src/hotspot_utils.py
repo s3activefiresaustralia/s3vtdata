@@ -205,7 +205,7 @@ def get_nearest_hotspots(
 def concat_swath_gdf(
     swath_dir: Path,
     archive: Optional[bool] = True,
-    delete: Optional[bool] = False
+    delete: Optional[bool] = True
 ) -> gpd.GeoDataFrame:
     """Method to concatenate all the swath geometry into a single GeoDataFrame.
     
@@ -274,10 +274,10 @@ def pairwise_swath_intersect(
     :param end_datetime: The end datetime to subset the GeoDataFrame.
     
     :return:
-        The shapely.geometry object generated formed from the intersection between two sensors
+        The shapely.geometry object generated from the intersection of two sensors' swath geometry
         between start and end datetime.
     """
-    dt_subset_df = swath_gdf[(swath_gdf['AcquisitionOfSignalUTC'] > start_dt) & (swath_gdf['AcquisitionOfSignalUTC'] <= end_dt)]
+    dt_subset_df = swath_gdf[(swath_gdf['AcquisitionOfSignalUTC'] > start_datetime) & (swath_gdf['AcquisitionOfSignalUTC'] <= end_datetime)]
     
     sensor_a_subset = pd.concat(
         [dt_subset_df[dt_subset_df['Satellite'] == sensor_a] for sensor_a in sensors_a],
@@ -368,7 +368,7 @@ def hotspots_compare(
         index_a_tasks = []
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
-                solar_date = str(index_a.date())
+                solar_date = index_a.date()
                 
                 # The seconds for start time is hard coded to 0 and end time to 59 seconds, since start and end time
                 # resolution is only to the minutes in the parameters supplied to this method.
@@ -378,10 +378,7 @@ def hotspots_compare(
                 # skip if swath directory for the solar_date is missing.
                 # TODO need to read combined geometry into a common dataframes
                 # solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
-                
-                if not solar_date_swath_directory.exists():
-                    continue
-                    
+            
                 index_a_tasks.append(
                     delayed(get_nearest_hotspots)(
                         gdf_ra,
