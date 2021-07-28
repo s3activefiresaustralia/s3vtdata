@@ -27,7 +27,7 @@ def unique_product_hotspots(
     product_a: str,
     all_hotspots_gdf: gpd.GeoDataFrame,
     compare_field: str,
-    swath_directory: Union[Path, str],
+    swath_gdf: gpd.GeoDataFrame,
     outfile: Union[Path, str],
     start_time: str,
     end_time: str,
@@ -37,7 +37,7 @@ def unique_product_hotspots(
     :param product_a: The product_a to compare against all the products.
     :param all_hotspots_gdf: The GeoDataFrame with all the hotspots datasets.
     :param compare_field: The solar_day or solar_night.
-    :param swath_directory: The directory where swath data are stored.
+    :param swath_gdf: The concatenated GeoDataFrame from the daily swath geojson files.
     :param outfile: The csv outfile to save the nearest hotspots result for product_a
     :param start_time: The start time to subset the data.
     :param end_time: The end time to subset the data.
@@ -46,8 +46,6 @@ def unique_product_hotspots(
         None if no nearest hotspots are present.
         The output file path if nearest hotspots are present.
     """
-    # Create concatenated swath GeoDataFrame from the daily swath geometry.
-    swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=False)
         
     unique_products = [p for p in all_hotspots_gdf["satellite_sensor_product"].unique()]
     nearest_hotspots_dfs = []
@@ -155,25 +153,35 @@ def process_nearest_points(
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
 
-    _LOG.info(f"Generating satellite swaths from {solar_start_dt.date()} to {solar_end_dt.date()}")
     swath_directory = Path(outdir).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
-    if not swath_directory.exists():
-        swath_directory.mkdir(exist_ok=True, parents=True)
+    swath_pkl_file = swath_directory.with_suffix(".pkl")
+    
+    if swath_pkl_file.exists():
+        _LOG.info(f"{swath_pkl_file.as_posix()} exists. Reading Swath GeoDataFrame from the file.")
+        swath_gdf = pd.read_pickle(swath_pkl_file)
+    else:
+        if not swath_directory.exists():
+            swath_directory.mkdir(exist_ok=True, parents=True)
+        _LOG.info(f"Generating satellite swaths from {solar_start_dt.date()} to {solar_end_dt.date()}")
+        swath_generation_tasks = util.swath_generation_tasks(
+            solar_start_dt,
+            solar_end_dt,
+            lon_east,
+            lon_west,
+            swath_directory=swath_directory,
+            config_file=swath_config_file
+        )
 
-    swath_generation_tasks = util.swath_generation_tasks(
-        solar_start_dt,
-        solar_end_dt,
-        lon_east,
-        lon_west,
-        swath_directory=swath_directory,
-        config_file=swath_config_file
-    )
+        # Compute swath genration tasks sequentially.
+        # for swath_task in swath_generation_tasks:
+        #     swath_task.compute()
+
+        _ = dask.compute(*swath_generation_tasks)
+            # Create concatenated swath GeoDataFrame from the daily swath geometry.
+        _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
+        swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=True)
+        swath_gdf.to_pickle(swath_pkl_file)
     
-    # Compute swath genration tasks sequentially.
-    # for swath_task in swath_generation_tasks:
-    #     swath_task.compute()
-    
-    _ = dask.compute(*swath_generation_tasks)
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
@@ -188,7 +196,7 @@ def process_nearest_points(
                 " Same file will be used in analysis."
             )
             continue
-        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_directory, outfile))
+        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_gdf, outfile, start_time, end_time))
     outfiles = [fid for fid in dask.compute(*all_product_tasks) if fid is not None]
     return outfiles
     
