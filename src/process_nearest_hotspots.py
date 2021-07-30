@@ -142,8 +142,6 @@ def process_nearest_points(
         dea_frp=dea_frp,
         start_date=start_date,
         end_date=end_date,
-        start_time=start_time,
-        end_time=end_time,
         bbox=(lon_west, lat_south, lon_east, lat_north),
         chunks=chunks,
         outdir=outdir,
@@ -181,7 +179,8 @@ def process_nearest_points(
         _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
         swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=True)
         swath_gdf.to_pickle(swath_pkl_file)
-    
+    print(swath_gdf["Satellite"].unique())
+    print(hotspots_gdf["satellite"].unique())
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()

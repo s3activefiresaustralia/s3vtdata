@@ -67,6 +67,16 @@ __slstr_ignore_attrs__ = [
 ]
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
+__satellite_name_map__ = {
+    'NOAA 19': "NOAA_19",
+    'SENTINEL_3A': "SENTINEL_3A",
+    'AQUA': "AQUA",
+    'NOAA 20': "NOAA_20",
+    'SENTINEL_3B': "SENTINEL_3B",
+    'TERRA': "TERRA",
+    'SUOMI NPP': "NPP"
+}
+
 # swathpredict.py must exsist in the same directory as this file.
 swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
 if not swathpredict_py.exists():
@@ -166,20 +176,20 @@ def get_nearest_hotspots(
 
     if not geosat_flag:
         try:
-            # TODO get the common geometry
             intersection = pairwise_swath_intersect(
                 swath_gdf,
                 set(gdfa["satellite"]),
-                set(gdfa["satellite"]),
+                set(gdfb["satellite"]),
                 start_datetime,
                 end_datetime
             )
+            print(intersection)
         except Exception as err:
             _LOG.debug(err)
             return None
 
         if intersection.is_empty:
-            _LOG.debug(f"Intersection is Empty for {set(gdfa['satellite'])} and {set(gdfa['satellite'])} between {start_datetime} and {end_datetime}")
+            _LOG.debug(f"Intersection is Empty for {set(gdfa['satellite'])} and {set(gdfb['satellite'])} between {start_datetime} and {end_datetime}")
             return None
 
         maska = gdfa.within(intersection)
@@ -278,14 +288,13 @@ def pairwise_swath_intersect(
         between start and end datetime.
     """
     dt_subset_df = swath_gdf[(swath_gdf['AcquisitionOfSignalUTC'] > start_datetime) & (swath_gdf['AcquisitionOfSignalUTC'] <= end_datetime)]
-    
     sensor_a_subset = pd.concat(
-        [dt_subset_df[dt_subset_df['Satellite'] == sensor_a] for sensor_a in sensors_a],
+        [dt_subset_df[dt_subset_df['Satellite'] == __satellite_name_map__[sensor_a]] for sensor_a in sensors_a],
         ignore_index=True
     )
     
     sensor_b_subset = pd.concat(
-        [dt_subset_df[dt_subset_df['Satellite'] == sensor_b] for sensor_b in sensors_b],
+        [dt_subset_df[dt_subset_df['Satellite'] == __satellite_name_map__[sensor_b]] for sensor_b in sensors_b],
         ignore_index=True
     )
     
@@ -372,8 +381,13 @@ def hotspots_compare(
                 
                 # The seconds for start time is hard coded to 0 and end time to 59 seconds, since start and end time
                 # resolution is only to the minutes in the parameters supplied to this method.
+                
                 start_datetime = datetime(solar_date.year, solar_date.month, solar_date.day, int(start_hour), int(start_min), 0)
                 end_datetime = datetime(solar_date.year, solar_date.month, solar_date.day, int(end_hour), int(end_min), 59)
+                
+                # if start time hours
+                if int(start_hour) > int(end_hour):
+                    end_datetime = end_datetime + timedelta(days=1)
                 
                 # skip if swath directory for the solar_date is missing.
                 # TODO need to read combined geometry into a common dataframes
@@ -540,34 +554,24 @@ def load_geojson(
 
 def temporal_subset_df(
     df: gpd.GeoDataFrame,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset the data
 
     :param df: The data to be subsetted.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data.
-    :param index_col: The datetime column to be set as an index col.
 
     :returns:
         The temporally subsetted GeoDataFrame
     """
     # create solar day as a the datetime index
-    if index_col == "solar_day":
-        df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
-    else:
-        raise NotImplementedError(f"index_col '{index_col}' not implemented")
+    df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
         
     if (start_date is not None) & (end_date is not None):
         df = df.loc[start_date:end_date]
-    if (start_time is not None) & (end_time is not None):
-        df = df.between_time(start_time, end_time)
+
     return df
 
 
@@ -603,20 +607,14 @@ def normalize_features(
 
 def modis_viirs_temporal_subset_normalize(
     gdf: gpd.GeoDataFrame,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset and normalize features attributes for MODIS and VIIRS product.
 
     :param gdf: The GeoDataFrame dataset.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
-    :param index_col: The datetime column to be set as an index col.
 
     :returns:
         The subsetted GeoDataFrame.
@@ -625,28 +623,22 @@ def modis_viirs_temporal_subset_normalize(
     gdf["solar_day"] = pd.to_datetime(gdf["solar_day"])
     gdf["solar_night"] = gdf["solar_day"] - pd.Timedelta(hours=12)
 
-    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date, index_col)
+    gdf = temporal_subset_df(gdf, start_date, end_date)
     return gdf
 
 
 def slstr_temporal_subset_normalize(
     gdf: gpd.GeoDataFrame,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     provider: Optional[str] = None,
-    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     """Method to temporally subset and normalize features attributes for SLSTR product.
 
     :param gdf: The GeoDataFrame dataset.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param provider: The hotspots algorithm associated provider.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         The subsetted GeoDataFrame.
@@ -670,30 +662,24 @@ def slstr_temporal_subset_normalize(
         raise ValueError(f"Provider must be esa or eumetsat: not {provider}")
 
     gdf.rename(columns={"F1_Fire_pixel_radiance": "power"}, inplace=True)
-    gdf = temporal_subset_df(gdf, start_time, end_time, start_date, end_date, index_col)
+    gdf = temporal_subset_df(gdf, start_date, end_date)
     return gdf
 
 
 def process_nasa_hotspots(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize feature attributes for NASA product.
 
     :param geojson_file: Full path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
@@ -703,9 +689,7 @@ def process_nasa_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, index_col
-        )
+        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_date, end_date)
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -713,23 +697,17 @@ def process_nasa_hotspots(
 def process_dea_hotspots(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize features attributes for DEA product.
 
     :param geojson_file: Full path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-    :param index_col: The datetime column to be set as an index col.
    
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and
@@ -739,9 +717,7 @@ def process_dea_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, index_col
-        )
+        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_date, end_date)
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -749,19 +725,14 @@ def process_dea_hotspots(
 def process_landgate_hotspots(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method load and normalize features attributes for Landgate product.
 
-    :param geojson_file: Fupp path to a geojson file to read.
+    :param geojson_file: Full path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
@@ -776,9 +747,7 @@ def process_landgate_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(modis_viirs_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, index_col
-        )
+        task = delayed(modis_viirs_temporal_subset_normalize)(df, start_date, end_date)
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -786,23 +755,17 @@ def process_landgate_hotspots(
 def process_eumetsat_hotspots(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to load, subset and normalize features attributes for EUMETSAT product.
 
     :param geojson_file: Fupp path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and
@@ -815,9 +778,7 @@ def process_eumetsat_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(slstr_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, "eumetsat", index_col
-        )
+        task = delayed(slstr_temporal_subset_normalize)(df, start_date, end_date, "eumetsat")
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -825,23 +786,17 @@ def process_eumetsat_hotspots(
 def process_esa_hotspots(
     geojson_file: Union[Path, str],
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[str] = "solar_day"
 ) -> List[dask.delayed]:
     """Method load, subset and normalize features attributes for ESA product.
 
     :param geojson_file: Fupp path to a geojson file to read.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         List of dask delayed tasks that would return subsetted GeoDataFrame and normalize features.
@@ -853,9 +808,7 @@ def process_esa_hotspots(
 
     gdf_tasks = []
     for df in gdf_chunks:
-        task = delayed(slstr_temporal_subset_normalize)(
-            df, start_time, end_time, start_date, end_date, "esa", index_col
-        )
+        task = delayed(slstr_temporal_subset_normalize)(df, start_date, end_date, "esa")
         gdf_tasks.append(task)
     return gdf_tasks
 
@@ -863,12 +816,9 @@ def process_esa_hotspots(
 def get_all_hotspots_tasks(
     input_files_dict: Dict,
     bbox: Optional[Tuple] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     num_chunks: Optional[int] = 1,
-    index_col: Optional[int] = "solar_day"
 ) -> List[dask.delayed]:
     """Method to prepare hotspots geo dataframes from input geojson files.
 
@@ -878,12 +828,9 @@ def get_all_hotspots_tasks(
 
     :param input_files_dict: The dictionary with key as data provider and value as file path.
     :param bbox: The bounding box to subset features of geojson file.
-    :param start_time: The start time to subset the data.
-    :param end_time: The end time to subset the data.
     :param start_date: The start date to subset the data.
     :param end_date: The end date to subset the data
     :param num_chunks: The number of blocks to be sub-divided into.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         The List of all dask delayed tasks that would return GeoDataFrame
@@ -895,12 +842,9 @@ def get_all_hotspots_tasks(
         _LOG.info(f"reading and subsetting GeoDataFrame for {name}: {fid}")
         kwargs = {
             "bbox": bbox,
-            "start_time": start_time,
-            "end_time": end_time,
             "start_date": start_date,
             "end_date": end_date,
             "num_chunks": num_chunks,
-            "index_col": index_col
         }
 
         if name == "nasa":
@@ -1084,12 +1028,9 @@ def process_hotspots_gdf(
     dea_frp: Optional[Union[Path, str]] = None,
     start_date: Optional[str] = "2020-01-01",
     end_date: Optional[str] = "2020-12-31",
-    start_time: Optional[str] = "21:00",
-    end_time: Optional[str] = "03:00",
     bbox: Optional[Tuple[float, float, float, float]] = None,
     chunks: Optional[int] = 100,
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
-    index_col: Optional[str] = "solar_day"
 ) -> gpd.GeoDataFrame:
     
     """Method to subset, merge and normalize FRP from nasa, esa, eumetsat, landgate and dea.
@@ -1104,12 +1045,9 @@ def process_hotspots_gdf(
     :param dea_frp: The path to DEA .geojson file.
     :param start_time: The start time to subset the data.
     :param end_time: The end time to subset the data.
-    :param start_date: The start date to subset the data.
-    :param end_date: The end date to subset the data
     :param bbox: The bounding box to subset the data.
     :param chunks: The number of blocks data is sub-divided into to enable multi-processing.
     :param outdir: The output directory to store outputs.
-    :param index_col: The datetime column to be set as an index col.
     
     :returns:
         Merged GeoDataFrame.
@@ -1140,8 +1078,6 @@ def process_hotspots_gdf(
         "bbox": bbox,
         "start_date": start_date,
         "end_date": end_date,
-        "start_time": start_time,
-        "end_time": end_time,
         "num_chunks": chunks,
     }
 
