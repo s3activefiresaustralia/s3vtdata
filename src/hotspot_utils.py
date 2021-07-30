@@ -68,7 +68,7 @@ __slstr_ignore_attrs__ = [
 __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 __satellite_name_map__ = {
-    'NOAA 19': "NOAA_19",
+    'NOAA-19': "NOAA_19",
     'SENTINEL_3A': "SENTINEL_3A",
     'AQUA': "AQUA",
     'NOAA 20': "NOAA_20",
