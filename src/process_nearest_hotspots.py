@@ -151,7 +151,9 @@ def process_nearest_points(
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
 
-    swath_directory = Path(outdir).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
+    swath_directory = Path(outdir).joinpath(
+        f"swaths_{int(lon_east)}_{int(lon_west)}_{solar_start_dt.strftime('%Y%m%d')}_{solar_end_dt.strftime('%Y%m%d')}"
+    )
     swath_pkl_file = swath_directory.with_suffix(".pkl")
     
     if swath_pkl_file.exists():
@@ -179,15 +181,13 @@ def process_nearest_points(
         _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
         swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=True)
         swath_gdf.to_pickle(swath_pkl_file)
-    print(swath_gdf["Satellite"].unique())
-    print(hotspots_gdf["satellite"].unique())
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
     ]
     all_product_tasks = []
     for product_a in unique_products:
-        outfile = Path(outdir).joinpath(f"nearest_points_{product_a}_{compare_field}.csv")
+        outfile = Path(outdir).joinpath(f"nearest_points_{product_a}_{start_time.replace(':','')}_{end_time.replace(':','')}.csv")
         if outfile.exists():
             _LOG.info(
                 f"{outfile.as_posix()} exists. skipped nearest"
