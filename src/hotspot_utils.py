@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from datetime import datetime
+from datetime import date
 from datetime import timedelta
 from pathlib import Path
 from typing import Tuple, Union, Optional, List, Dict
@@ -156,8 +157,9 @@ def get_nearest_hotspots(
     gdfa: gpd.GeoDataFrame,
     gdfb: gpd.GeoDataFrame,
     geosat_flag: bool,
-    start_datetime: datetime,
-    end_datetime: datetime,
+    solar_date: date,
+    start_time: str,
+    end_time: str,
     swath_gdf: gpd.GeoDataFrame
 ) -> Union[None, gpd.GeoDataFrame]:
     """Method to compute nearest hotspots between two GeoDataFrame.
@@ -165,8 +167,9 @@ def get_nearest_hotspots(
     :param gdfa: The GeoDataFrame
     :param gdfb: The GeoDataFrame
     :param geosat_flag: The flag to indicate if hotspot is from geostationary statellite.
-    :param start_datetime: The start datetime to subset the GeoDataFrame. 
-    :param end_datetime: The end datetime to subset the GeoDataFrame.
+    :param solar_date: The date to subset the swath_gdf GeoDataFrame.
+    :param start_time: The start time to subset the swath_gdf GeoDataFrame. 
+    :param end_time: The end time to subset the swath_gdf GeoDataFrame.
     :param swath_gdf: The concatenated GeoDataFrame from the daily swath geojson files.
 
     :returns:
@@ -180,8 +183,9 @@ def get_nearest_hotspots(
                 swath_gdf,
                 set(gdfa["satellite"]),
                 set(gdfb["satellite"]),
-                start_datetime,
-                end_datetime
+                solar_date,
+                start_time,
+                end_time
             )
             print(intersection)
         except Exception as err:
@@ -189,7 +193,10 @@ def get_nearest_hotspots(
             return None
 
         if intersection.is_empty:
-            _LOG.debug(f"Intersection is Empty for {set(gdfa['satellite'])} and {set(gdfb['satellite'])} between {start_datetime} and {end_datetime}")
+            _LOG.debug(
+                f"Intersection is Empty for {set(gdfa['satellite'])} and {set(gdfb['satellite'])}"
+                f" between {start_time} and {end_time} on solar date {solar_date}"
+            )
             return None
 
         maska = gdfa.within(intersection)
@@ -272,22 +279,28 @@ def pairwise_swath_intersect(
     swath_gdf: gpd.GeoDataFrame,
     sensors_a: set,
     sensors_b: set,
-    start_datetime: datetime,
-    end_datetime: datetime
+    solar_date: date,
+    start_time: str,
+    end_time: str
 ) -> shapely.geometry:
     """Method to generate pairwise_swath_intersect.
     
     :param swath_gdf: The concatenated GeoDataFrame from the daily swath geojson files.
-    :param sensors_a: The names of the sensors from GeoDataFrame a.
-    :param sensors_b: The names of the sensors from GeoDataFrame b.
-    :param start_datetime: The start datetime to subset the GeoDataFrame. 
-    :param end_datetime: The end datetime to subset the GeoDataFrame.
+    :param sensors_a: The names of the sensors swath_gdf from GeoDataFrame.
+    :param sensors_b: The names of the sensors swath_gdf from GeoDataFrame.
+    :param solar_date: The solar date to subset swath_gdf GeoDataFrame.
+    :param solar_date: The solar date to subset the swath_gdf GeoDataFrame.
+    :param start_time: The start time to subset the swath_gdf GeoDataFrame. 
+    :param end_time: The end time to subset the GeoDataFrame.
     
     :return:
         The shapely.geometry object generated from the intersection of two sensors' swath geometry
-        between start and end datetime.
-    """
-    dt_subset_df = swath_gdf[(swath_gdf['AcquisitionOfSignalUTC'] > start_datetime) & (swath_gdf['AcquisitionOfSignalUTC'] <= end_datetime)]
+        between start and end time for solar_date.
+    """    
+    dt_subset_df = swath_gdf[swath_gdf["AcquisitionOfSignalUTC"].dt.date == solar_date]
+    dt_subset_df = dt_subset_df.set_index("AcquisitionOfSignalUTC")
+    dt_subset_df = dt_subset_df.between_time(start_time, end_time)
+    
     sensor_a_subset = pd.concat(
         [dt_subset_df[dt_subset_df['Satellite'] == __satellite_name_map__[sensor_a]] for sensor_a in sensors_a],
         ignore_index=True
@@ -378,28 +391,15 @@ def hotspots_compare(
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = index_a.date()
-                
-                # The seconds for start time is hard coded to 0 and end time to 59 seconds, since start and end time
-                # resolution is only to the minutes in the parameters supplied to this method.
-                
-                start_datetime = datetime(solar_date.year, solar_date.month, solar_date.day, int(start_hour), int(start_min), 0)
-                end_datetime = datetime(solar_date.year, solar_date.month, solar_date.day, int(end_hour), int(end_min), 59)
-                
-                # if start time hours
-                if int(start_hour) > int(end_hour):
-                    end_datetime = end_datetime + timedelta(days=1)
-                
-                # skip if swath directory for the solar_date is missing.
-                # TODO need to read combined geometry into a common dataframes
-                # solar_date_swath_directory = Path(swath_directory).joinpath(solar_date)
             
                 index_a_tasks.append(
                     delayed(get_nearest_hotspots)(
                         gdf_ra,
                         gdf_rb,
                         geosat_flag,
-                        start_datetime,
-                        end_datetime,
+                        solar_date,
+                        start_time,
+                        end_time,
                         swath_gdf
                     )
                 )
