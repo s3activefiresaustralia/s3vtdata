@@ -339,7 +339,9 @@ def swath_generation_tasks(
         List of delayed tasks to generate daily satellite swaths.
     """
     if swath_directory is None:
-        swath_directory = Path(os.getcwd()).joinpath(f"swaths_{int(lon_east)}_{int(lon_west)}")
+        swath_directory = Path(os.getcwd()).joinpath(
+            f"swaths_{int(lon_east)}_{int(lon_west)}_{start_dt.strftime('%Y%m%d')}_{end_dt.strftime('%Y%m%d')}"
+        )
         swath_directory.mkdir(exist_ok=True)
 
     dts = [start_dt + timedelta(days=day) for day in range((end_dt - start_dt).days + 1)]
