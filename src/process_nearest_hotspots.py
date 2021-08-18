@@ -146,7 +146,11 @@ def process_nearest_points(
         chunks=chunks,
         outdir=outdir,
     )
-
+    _LOG.info(f"Processing subset between {start_time} and {end_time}")
+    hotspots_gdf = hotspots_gdf.between_time(start_time, end_time)
+    unique_hours = hotspots_gdf['solar_day'].dt.hour.unique()
+    _LOG.info(f"Unique hours in temporal subset hotspots: {unique_hours}")
+    
     _LOG.info(f"Processing Neareast Hotspots...")
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
