@@ -78,6 +78,9 @@ __satellite_name_map__ = {
     'SUOMI NPP': "NPP"
 }
 
+__debug_dir__ = Path.cwd().parent.joinpath("workdir","debug")
+__debug_dir__.mkdir(exist_ok=True)
+
 # swathpredict.py must exsist in the same directory as this file.
 swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
 if not swathpredict_py.exists():
@@ -99,8 +102,8 @@ def get_satellite_swaths(
     if swath_directory is None:
         swath_directory = Path(os.getcwd()).joinpath(f"output_{int(lon_east)}_{int(lon_west)}")
         swath_directory.mkdir(parents=True, exist_ok=True)
+    
     solar_date = str(solar_dt.date())
-
     solar_date_swath_dir = swath_directory.joinpath(solar_date)
     if solar_date_swath_dir.exists():
         _LOG.debug(str(solar_date) + " exists - skipping swath generation")
@@ -160,7 +163,8 @@ def get_nearest_hotspots(
     solar_date: date,
     start_time: str,
     end_time: str,
-    swath_gdf: gpd.GeoDataFrame
+    swath_gdf: gpd.GeoDataFrame,
+    test: Optional[bool] = False
 ) -> Union[None, gpd.GeoDataFrame]:
     """Method to compute nearest hotspots between two GeoDataFrame.
 
@@ -171,11 +175,13 @@ def get_nearest_hotspots(
     :param start_time: The start time to subset the swath_gdf GeoDataFrame. 
     :param end_time: The end time to subset the swath_gdf GeoDataFrame.
     :param swath_gdf: The concatenated GeoDataFrame from the daily swath geojson files.
-
+    :param test: Flag to run in test/debug mode.
+    
     :returns:
         None if no intersections or fails in pairwise swath intersects.
         GeoDataFrame from ckdnearest method.
     """
+    
 
     if not geosat_flag:
         try:
@@ -185,9 +191,10 @@ def get_nearest_hotspots(
                 set(gdfb["satellite"]),
                 solar_date,
                 start_time,
-                end_time
+                end_time,
+                test=test
             )
-            print(intersection)
+            # print(intersection)
         except Exception as err:
             _LOG.debug(err)
             return None
@@ -215,7 +222,18 @@ def get_nearest_hotspots(
         return None
 
     nearest_hotspots = ckdnearest(gdfa, gdfb)
-
+    
+    if test:
+        product_a = list(set(gdfa["satellite_sensor_product"]))[0].replace(' ', '_')
+        product_b = list(set(gdfb["satellite_sensor_product"]))[0].replace(' ', '_')
+        test_dir = __debug_dir__.joinpath(f"{solar_date.strftime('%Y-%m-%d')}-{start_time.replace(':','')}-{end_time.replace(':','')}")
+        test_dir.mkdir(exist_ok=True)
+        name_str = f"{solar_date.strftime('%Y%m%d')}_{start_time.replace(':','')}_{end_time.replace(':','')}"
+        _fid_sensor_a = test_dir.joinpath(f"{product_a}_{name_str}.geojson")
+        _fid_sensor_b = test_dir.joinpath(f"{product_b}_{name_str}.geojson")
+        gdfa.to_file(_fid_sensor_a, driver="GeoJSON")
+        gdfb.to_file(_fid_sensor_b, driver="GeoJSON")
+        nearest_hotspots.to_csv(test_dir.joinpath(f"{product_a}_and_{product_b}_{name_str}.csv"))
     return nearest_hotspots
 
 
@@ -262,13 +280,16 @@ def concat_swath_gdf(
     
     swath_gdf = swath_gdf.rename(columns={v:k for k, v in map_keys.items()})
     swath_gdf["AcquisitionOfSignalUTC"] = pd.to_datetime(swath_gdf["AcquisitionOfSignalUTC"])
-    
+    swath_gdf['AcquisitionOfSignalSolarDay'] = swath_gdf.apply(
+        lambda row: solar_day(row.AcquisitionOfSignalUTC, row.geometry.centroid.x),
+        axis=1
+    )
     if archive:
         archive_path = Path(swath_dir).parent.joinpath(Path(swath_dir).name)
         shutil.make_archive(archive_path, 'zip', swath_dir)
-        print(f"{swath_dir} has been archived at {archive_path}.")
+        _LOG.info(f"{swath_dir} has been archived at {archive_path}.")
         if delete:
-            print(f"Deleting all files from {swath_dir}...")
+            _LOG.info(f"Deleting all files from {swath_dir}...")
             for _dir in Path(swath_dir).iterdir():
                 if re.match(r"[\d]{4}-[\d]{2}-[\d]{2}", Path(_dir).name):
                     shutil.rmtree(_dir, ignore_errors=False)
@@ -281,7 +302,8 @@ def pairwise_swath_intersect(
     sensors_b: set,
     solar_date: date,
     start_time: str,
-    end_time: str
+    end_time: str,
+    test: Optional[bool] = False
 ) -> shapely.geometry:
     """Method to generate pairwise_swath_intersect.
     
@@ -292,14 +314,16 @@ def pairwise_swath_intersect(
     :param solar_date: The solar date to subset the swath_gdf GeoDataFrame.
     :param start_time: The start time to subset the swath_gdf GeoDataFrame. 
     :param end_time: The end time to subset the GeoDataFrame.
+    :param test: Flag to run in test/debug mode.
     
     :return:
         The shapely.geometry object generated from the intersection of two sensors' swath geometry
         between start and end time for solar_date.
     """    
-    dt_subset_df = swath_gdf[swath_gdf["AcquisitionOfSignalUTC"].dt.date == solar_date]
-    dt_subset_df = dt_subset_df.set_index("AcquisitionOfSignalUTC")
-    dt_subset_df = dt_subset_df.between_time(start_time, end_time)
+    
+    dt_subset_df = swath_gdf[swath_gdf["AcquisitionOfSignalSolarDay"].dt.date == solar_date]
+    dt_subset_df = dt_subset_df.set_index("AcquisitionOfSignalSolarDay", drop=False)
+    dt_subset_df = dt_subset_df.between_time(start_time, end_time) 
     
     sensor_a_subset = pd.concat(
         [dt_subset_df[dt_subset_df['Satellite'] == __satellite_name_map__[sensor_a]] for sensor_a in sensors_a],
@@ -310,11 +334,29 @@ def pairwise_swath_intersect(
         [dt_subset_df[dt_subset_df['Satellite'] == __satellite_name_map__[sensor_b]] for sensor_b in sensors_b],
         ignore_index=True
     )
-    
+        
     sensor_a_geom = sensor_a_subset.unary_union
     sensor_b_geom = sensor_b_subset.unary_union
     intersection = sensor_a_geom.intersection(sensor_b_geom)
     
+    if test:
+        test_dir = __debug_dir__.joinpath(f"{solar_date.strftime('%Y-%m-%d')}-{start_time.replace(':','')}-{end_time.replace(':','')}")
+        test_dir.mkdir(exist_ok=True)
+        name_str = f"{solar_date.strftime('%Y%m%d')}_{start_time.replace(':','')}_{end_time.replace(':','')}"
+        sensor_a_subset.to_file(test_dir.joinpath(f"swath_{list(sensors_a)[0]}_{name_str}.geojson"), driver="GeoJSON")
+        sensor_b_subset.to_file(test_dir.joinpath(f"swath_{list(sensors_b)[0]}_{name_str}.geojson"), driver="GeoJSON")
+        tmp_gdf = gpd.GeoDataFrame(
+            [
+                {
+                'solar_date': solar_date.isoformat(),
+                'start_time': start_time,
+                'end_time': end_time,
+                'geometry': intersection
+                }
+            ]
+        )
+        tmp_gdf.to_file(test_dir.joinpath(f"swath_intersection_{list(sensors_a)[0]}_{list(sensors_b)[0]}_{name_str}.geojson"), driver="GeoJSON")
+        
     return intersection
 
 
@@ -367,6 +409,7 @@ def hotspots_compare(
     swath_gdf: gpd.GeoDataFrame,
     start_time: str,
     end_time: str,
+    test: Optional[bool] = False
 ) -> Union[None, pd.DataFrame]:
     """Function compares sensor GeoDataFrame from two satellite sensor product.
 
@@ -402,7 +445,8 @@ def hotspots_compare(
                         solar_date,
                         start_time,
                         end_time,
-                        swath_gdf
+                        swath_gdf,
+                        test=test
                     )
                 )
         index_a_dfs = [df for df in dask.compute(*index_a_tasks) if df is not None]

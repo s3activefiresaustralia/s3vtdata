@@ -31,6 +31,7 @@ def unique_product_hotspots(
     outfile: Union[Path, str],
     start_time: str,
     end_time: str,
+    test: Optional[bool] = False
 ) -> Union[Path, None]:
     """Helper method to compute nearest hotspots for a unique product_a.
     
@@ -41,7 +42,7 @@ def unique_product_hotspots(
     :param outfile: The csv outfile to save the nearest hotspots result for product_a
     :param start_time: The start time to subset the data.
     :param end_time: The end time to subset the data.
-    
+    :param test: Flag to run in test/debug mode.
     :returns:
         None if no nearest hotspots are present.
         The output file path if nearest hotspots are present.
@@ -67,7 +68,8 @@ def unique_product_hotspots(
             geosat_flag,
             swath_gdf,
             start_time,
-            end_time
+            end_time,
+            test=test
         )
         if product_a_df is not None:
             nearest_hotspots_dfs.append(product_a_df)
@@ -98,6 +100,7 @@ def process_nearest_points(
     outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
     compare_field: Optional[str] = "solar_day",
     swath_config_file: Optional[Union[Path, str]] = None,
+    test: Optional[bool] = True
 ) -> List:
     """Processing of nearest points for different products in hotpots.
 
@@ -123,6 +126,7 @@ def process_nearest_points(
     :param outdir: The output directory to save the output files.
     :param compare_field: The field (column) used in finding the nearest hotspots.
     :param swath_config_file: The config file used in swath generation.
+    :param test: The flag to indicate if it is a test process.
     :returns:
         All the .csv output files path containing the nearest hotspots.
     """
@@ -133,19 +137,36 @@ def process_nearest_points(
     if swath_config_file is None:
         swath_config_file = Path(__file__).parent.parent.joinpath("configs", "s3vtconfig.yaml")
     
-    _LOG.info(f"Processing FRP Hotspots Datasets")
-    hotspots_gdf = util.process_hotspots_gdf(
-        nasa_frp=nasa_frp,
-        esa_frp=esa_frp,
-        eumetsat_frp=eumetsat_frp,
-        landgate_frp=landgate_frp,
-        dea_frp=dea_frp,
-        start_date=start_date,
-        end_date=end_date,
-        bbox=(lon_west, lat_south, lon_east, lat_north),
-        chunks=chunks,
-        outdir=outdir,
+    hotspots_pkl_file = Path(outdir).joinpath(
+        f"all_hotspots_{int(lon_east)}_{int(lon_west)}_{start_date.replace('-','')}_{end_date.replace('-','')}_{start_time.replace(':', '')}_{end_time.replace(':','')}.pkl"
     )
+    if hotspots_pkl_file.exists():
+        _LOG.info(f"{hotspots_pkl_file.as_posix()} exists. Reading hotspots GeoDataFrame from the file.")
+        hotspots_gdf = pd.read_pickle(hotspots_pkl_file)
+    else:
+        _LOG.info(f"Processing FRP Hotspots from GeoJSON files")
+        hotspots_gdf = util.process_hotspots_gdf(
+            nasa_frp=nasa_frp,
+            esa_frp=esa_frp,
+            eumetsat_frp=eumetsat_frp,
+            landgate_frp=landgate_frp,
+            dea_frp=dea_frp,
+            start_date=start_date,
+            end_date=end_date,
+            bbox=(lon_west, lat_south, lon_east, lat_north),
+            chunks=chunks,
+            outdir=outdir,
+        )
+        _LOG.info(f"Saving spatial and temporal subset hotspots dataframe to pickle file {hotspots_pkl_file.as_posix()}")
+        hotspots_gdf.to_pickle(hotspots_pkl_file)
+    
+    if test:
+        _LOG.info(f"Saving spatial and temporal hotspots dataframe to GeoJSON file {hotspots_pkl_file.with_suffix('.geojson').as_posix()}")
+        hotspots_gdf.to_file(hotspots_pkl_file.with_suffix(".geojson"),
+            driver="GeoJSON"
+        )
+    
+    
     _LOG.info(f"Processing subset between {start_time} and {end_time}")
     hotspots_gdf = hotspots_gdf.between_time(start_time, end_time)
     unique_hours = hotspots_gdf['solar_day'].dt.hour.unique()
@@ -185,6 +206,12 @@ def process_nearest_points(
         _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
         swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=True)
         swath_gdf.to_pickle(swath_pkl_file)
+    if test:
+        _LOG.info(f"Saving swath GeoDataFrame to GeoJSON file {swath_pkl_file.with_suffix('.geojson').as_posix()}")
+        swath_gdf.to_file(swath_pkl_file.with_suffix(".geojson"),
+            driver="GeoJSON"
+        )
+    
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
@@ -199,7 +226,7 @@ def process_nearest_points(
                 " Same file will be used in analysis."
             )
             continue
-        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_gdf, outfile, start_time, end_time))
+        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_gdf, outfile, start_time, end_time, test=test))
     outfiles = [fid for fid in dask.compute(*all_product_tasks) if fid is not None]
     return outfiles
     
