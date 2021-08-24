@@ -79,7 +79,7 @@ __satellite_name_map__ = {
 }
 
 __debug_dir__ = Path.cwd().parent.joinpath("workdir","debug")
-__debug_dir__.mkdir(exist_ok=True)
+__debug_dir__.mkdir(exist_ok=True, parents=True)
 
 # swathpredict.py must exsist in the same directory as this file.
 swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
