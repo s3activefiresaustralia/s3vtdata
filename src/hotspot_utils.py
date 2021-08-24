@@ -229,11 +229,12 @@ def get_nearest_hotspots(
         test_dir = __debug_dir__.joinpath(f"{solar_date.strftime('%Y-%m-%d')}-{start_time.replace(':','')}-{end_time.replace(':','')}")
         test_dir.mkdir(exist_ok=True)
         name_str = f"{solar_date.strftime('%Y%m%d')}_{start_time.replace(':','')}_{end_time.replace(':','')}"
-        _fid_sensor_a = test_dir.joinpath(f"{product_a}_{name_str}.geojson")
-        _fid_sensor_b = test_dir.joinpath(f"{product_b}_{name_str}.geojson")
+        _fid_sensor_a = test_dir.joinpath(f"{product_a}_and_{product_b}_{name_str}.geojson")
+        _fid_sensor_b = test_dir.joinpath(f"{product_a}_and_{product_b}_{name_str}.geojson")
         gdfa.to_file(_fid_sensor_a, driver="GeoJSON")
         gdfb.to_file(_fid_sensor_b, driver="GeoJSON")
         nearest_hotspots.to_csv(test_dir.joinpath(f"{product_a}_and_{product_b}_{name_str}.csv"))
+    
     return nearest_hotspots
 
 
@@ -340,22 +341,30 @@ def pairwise_swath_intersect(
     intersection = sensor_a_geom.intersection(sensor_b_geom)
     
     if test:
+        sensor_a = list(sensors_a)[0]
+        sensor_b = list(sensors_b)[0]
         test_dir = __debug_dir__.joinpath(f"{solar_date.strftime('%Y-%m-%d')}-{start_time.replace(':','')}-{end_time.replace(':','')}")
         test_dir.mkdir(exist_ok=True)
         name_str = f"{solar_date.strftime('%Y%m%d')}_{start_time.replace(':','')}_{end_time.replace(':','')}"
-        sensor_a_subset.to_file(test_dir.joinpath(f"swath_{list(sensors_a)[0]}_{name_str}.geojson"), driver="GeoJSON")
-        sensor_b_subset.to_file(test_dir.joinpath(f"swath_{list(sensors_b)[0]}_{name_str}.geojson"), driver="GeoJSON")
-        tmp_gdf = gpd.GeoDataFrame(
-            [
-                {
-                'solar_date': solar_date.isoformat(),
-                'start_time': start_time,
-                'end_time': end_time,
-                'geometry': intersection
-                }
-            ]
-        )
-        tmp_gdf.to_file(test_dir.joinpath(f"swath_intersection_{list(sensors_a)[0]}_{list(sensors_b)[0]}_{name_str}.geojson"), driver="GeoJSON")
+        swath_sensor_a = test_dir.joinpath(f"swath_{sensor_a}_{name_str}.geojson")
+        swath_sensor_b = test_dir.joinpath(f"swath_{sensor_b}_{name_str}.geojson")
+        intersection_swath = test_dir.joinpath(f"swath_intersection_{sensor_a}_{sensor_b}_{name_str}.geojson")
+        if not swath_sensor_a.exists():
+            sensor_a_subset.to_file(swath_sensor_a, driver="GeoJSON")
+        if not swath_sensor_b.exists():
+            sensor_b_subset.to_file(swath_sensor_b, driver="GeoJSON")
+        if not intersection_swath.exists():
+            tmp_gdf = gpd.GeoDataFrame(
+                [
+                    {
+                    'solar_date': solar_date.isoformat(),
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'geometry': intersection
+                    }
+                ]
+            )
+            tmp_gdf.to_file(intersection_swath, driver="GeoJSON")
         
     return intersection
 
@@ -427,16 +436,14 @@ def hotspots_compare(
     :returns:
         GeoDataFrame of nearest hotspots
     """
-    start_hour, start_min, *_ = start_time.split(":")
-    end_hour, end_min, *_ = end_time.split(":")
-    
+
     nearest_hotspots_df = []
     for index_a, gdf_ra in gdf_a.resample("D", on=column_name):
         index_a_tasks = []
         for index_b, gdf_rb in gdf_b.resample("D", on=column_name):
             if index_a == index_b:
                 solar_date = index_a.date()
-            
+
                 index_a_tasks.append(
                     delayed(get_nearest_hotspots)(
                         gdf_ra,
