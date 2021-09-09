@@ -88,6 +88,7 @@ def process_nearest_points(
     eumetsat_frp: Union[Path, str],
     landgate_frp: Union[Path, str],
     dea_frp: Union[Path, str],
+    sentinel3_swath_pkl: Union[Path, str],
     lon_west: float,
     lat_south: float,
     lon_east: float,
@@ -114,6 +115,7 @@ def process_nearest_points(
     :param eumetsat_frp: The path to EUMETSAT .geojson file.
     :param landgate_frp: The path to LANDGATE .geojson file.
     :param dea_frp: The path to DEA .geojson file.
+    :param sentinel3_swath_pkl: The full path to Sentine3 swath geodataframe pickle file.
     :param lon_west: The western longitude of the extent to subset.
     :param lat_south: The southern latitude of the extent to subset.
     :param lon_east: The eastern longitude of the extent to subset.
@@ -198,13 +200,20 @@ def process_nearest_points(
         )
 
         # Compute swath genration tasks sequentially.
-        # for swath_task in swath_generation_tasks:
-        #     swath_task.compute()
+        for swath_task in swath_generation_tasks:
+             swath_task.compute()
 
-        _ = dask.compute(*swath_generation_tasks)
+        # _ = dask.compute(*swath_generation_tasks)
             # Create concatenated swath GeoDataFrame from the daily swath geometry.
         _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
-        swath_gdf = util.concat_swath_gdf(swath_directory, archive=True, delete=True)
+        s3_swath_gdf = pd.read_pickle(sentinel3_swath_pkl)
+        s3_swath_gdf = s3_swath_gdf[(s3_swath_gdf['AcquisitionOfSignalUTC'] >= start_date) & (s3_swath_gdf['AcquisitionOfSignalUTC'] <= end_date)]
+        swath_gdf = util.concat_swath_gdf(
+            swath_directory,
+            s3_swath_gdf,
+            archive=True,
+            delete=True
+        )
         swath_gdf.to_pickle(swath_pkl_file)
     if test:
         _LOG.info(f"Saving swath GeoDataFrame to GeoJSON file {swath_pkl_file.with_suffix('.geojson').as_posix()}")

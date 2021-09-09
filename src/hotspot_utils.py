@@ -24,6 +24,8 @@ from scipy.spatial import cKDTree
 from fiona.errors import DriverError
 from geopy.distance import distance
 
+from src.xml_util import getNamespaces
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -78,7 +80,7 @@ __satellite_name_map__ = {
     'SUOMI NPP': "NPP"
 }
 
-__debug_dir__ = Path.cwd().parent.joinpath("workdir","debug")
+__debug_dir__ = Path.cwd().parent.joinpath("debug")
 __debug_dir__.mkdir(exist_ok=True, parents=True)
 
 # swathpredict.py must exsist in the same directory as this file.
@@ -86,6 +88,39 @@ swathpredict_py = Path(__file__).resolve().parent.joinpath("swathpredict.py")
 if not swathpredict_py.exists():
     raise FileNotFoundError(f"swathpredict.py must exsist in {Path(__file__).parent.as_posix}")
     
+
+def convert_solar_time_to_utc(
+    lon_east: float,
+    lon_west: float,
+    start_time: str,
+    end_time: str,
+):
+    def _get_utc(hr, mins, lon, cross_over)
+        total_secs = (hr * 3600) + (mins * 60)
+        lon_secs = lon * 240
+        if cross_over:
+            total_secs += 86400
+        return (total_secs - lon_secs) / 60 / 60
+    
+    start_hour, start_min = start_time.split(':')
+    end_hour, end_min = end_time.split(':')
+    
+    start_time_utc = _get_utc(int(start_hour), int(start_min), lon_east, False)
+    
+    if int(end_hour) < int(start_hour):
+        end_time_utc = _get_utc(int(end_hour), int(end_min), lon_west, True)
+    else:
+        end_time_utc = _get_utc(int(end_hour), int(end_min), lon_west, False)
+    
+    start_hour = int(start_time_utc)
+    start_min = int((start_time_utc * 60) % 60)
+    
+    end_hour = int(end_time_utc)
+    end_min = int((end_time_utc * 60) % 60)
+    
+    return f"{start_hour}:{start_min}", f"{end_hour}:{end_min}"
+   
+
 
 def get_satellite_swaths(
     configuration: Union[Path, str],
@@ -115,7 +150,7 @@ def get_satellite_swaths(
     )
     start = min_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     period = str(int(delta_dt.total_seconds() / 60))
-    _LOG.debug(
+    print(
         "Generating swaths "
         + str(
             [
@@ -139,7 +174,7 @@ def get_satellite_swaths(
                 swathpredict_py.as_posix(),
                 "--configuration",
                 Path(configuration).as_posix(),
-                "--start",
+                "--start",start_time
                 start,
                 "--period",
                 period,
@@ -153,8 +188,7 @@ def get_satellite_swaths(
         _LOG.debug(f"Swath generation failed with err: {err}")
 
     return False
-    
-
+  
 
 def get_nearest_hotspots(
     gdfa: gpd.GeoDataFrame,
@@ -240,6 +274,7 @@ def get_nearest_hotspots(
 
 def concat_swath_gdf(
     swath_dir: Path,
+    s3_swath_gdf: gpd.GeoDataFrame,
     archive: Optional[bool] = True,
     delete: Optional[bool] = True
 ) -> gpd.GeoDataFrame:
@@ -247,6 +282,7 @@ def concat_swath_gdf(
     
     :param swath_dir: The parent directory where daily folders with the swath files are located.
         example: /home/jovyan/s3vt_dask/s3vtdata/workdir/swaths_154_147
+    :param s3_swath_gdf: The swath dataframe generated from sentinel3 FRP footprint.
     :param archive: The flag to archive all the geojson files from the swath directory.
     :param delete: The flag to delete the swath directory if and after archive is created.
     
@@ -280,11 +316,15 @@ def concat_swath_gdf(
                 map_keys[v] = c
     
     swath_gdf = swath_gdf.rename(columns={v:k for k, v in map_keys.items()})
-    swath_gdf["AcquisitionOfSignalUTC"] = pd.to_datetime(swath_gdf["AcquisitionOfSignalUTC"])
+    swath_gdfs = pd.concat([swath_gdf, s3_swath_gdf], ignore_index=True)
+    swath_gdfs["AcquisitionOfSignalUTC"] = pd.to_datetime(swath_gdfs["AcquisitionOfSignalUTC"])
+    
+    '''
     swath_gdf['AcquisitionOfSignalSolarDay'] = swath_gdf.apply(
         lambda row: solar_day(row.AcquisitionOfSignalUTC, row.geometry.centroid.x),
         axis=1
     )
+    '''
     if archive:
         archive_path = Path(swath_dir).parent.joinpath(Path(swath_dir).name)
         shutil.make_archive(archive_path, 'zip', swath_dir)
@@ -294,7 +334,7 @@ def concat_swath_gdf(
             for _dir in Path(swath_dir).iterdir():
                 if re.match(r"[\d]{4}-[\d]{2}-[\d]{2}", Path(_dir).name):
                     shutil.rmtree(_dir, ignore_errors=False)
-    return swath_gdf
+    return swath_gdfs
 
 
 def pairwise_swath_intersect(
@@ -322,8 +362,8 @@ def pairwise_swath_intersect(
         between start and end time for solar_date.
     """    
     
-    dt_subset_df = swath_gdf[swath_gdf["AcquisitionOfSignalSolarDay"].dt.date == solar_date]
-    dt_subset_df = dt_subset_df.set_index("AcquisitionOfSignalSolarDay", drop=False)
+    dt_subset_df = swath_gdf[swath_gdf["AcquisitionOfSignalUTC"].dt.date == solar_date]
+    dt_subset_df = dt_subset_df.set_index("AcquisitionOfSignalUTC", drop=False)
     dt_subset_df = dt_subset_df.between_time(start_time, end_time) 
     
     sensor_a_subset = pd.concat(
