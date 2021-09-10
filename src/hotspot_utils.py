@@ -11,7 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Tuple, Union, Optional, List, Dict
 import shutil
-
+import uuid
 import shapely
 import boto3
 import dask
@@ -72,10 +72,10 @@ __s3_pattern__ = r"^s3://" r"(?P<bucket>[^/]+)/" r"(?P<keyname>.*)"
 
 __satellite_name_map__ = {
     'NOAA-19': "NOAA_19",
-    'SENTINEL_3A': "SENTINEL_3A",
+    'SENTINEL_3A': "Sentinel_3A",
     'AQUA': "AQUA",
     'NOAA 20': "NOAA_20",
-    'SENTINEL_3B': "SENTINEL_3B",
+    'SENTINEL_3B': "Sentinel_3B",
     'TERRA': "TERRA",
     'SUOMI NPP': "NPP"
 }
@@ -95,7 +95,7 @@ def convert_solar_time_to_utc(
     start_time: str,
     end_time: str,
 ):
-    def _get_utc(hr, mins, lon, cross_over)
+    def _get_utc(hr, mins, lon, cross_over):
         total_secs = (hr * 3600) + (mins * 60)
         lon_secs = lon * 240
         if cross_over:
@@ -118,9 +118,8 @@ def convert_solar_time_to_utc(
     end_hour = int(end_time_utc)
     end_min = int((end_time_utc * 60) % 60)
     
-    return f"{start_hour}:{start_min}", f"{end_hour}:{end_min}"
+    return f"{start_hour:02}:{start_min:02}", f"{end_hour:02}:{end_min:02}"
    
-
 
 def get_satellite_swaths(
     configuration: Union[Path, str],
@@ -174,7 +173,7 @@ def get_satellite_swaths(
                 swathpredict_py.as_posix(),
                 "--configuration",
                 Path(configuration).as_posix(),
-                "--start",start_time
+                "--start",
                 start,
                 "--period",
                 period,
@@ -318,13 +317,9 @@ def concat_swath_gdf(
     swath_gdf = swath_gdf.rename(columns={v:k for k, v in map_keys.items()})
     swath_gdfs = pd.concat([swath_gdf, s3_swath_gdf], ignore_index=True)
     swath_gdfs["AcquisitionOfSignalUTC"] = pd.to_datetime(swath_gdfs["AcquisitionOfSignalUTC"])
-    
-    '''
-    swath_gdf['AcquisitionOfSignalSolarDay'] = swath_gdf.apply(
-        lambda row: solar_day(row.AcquisitionOfSignalUTC, row.geometry.centroid.x),
-        axis=1
-    )
-    '''
+    swath_gdfs['LossOfSignalUTC'] = pd.to_datetime(swath_gdfs["LossOfSignalUTC"])
+    swath_gdfs['TransitTime'] = pd.to_datetime(swath_gdfs["TransitTime"])
+    swath_gdfs['AcquisitionOfSignalLocal'] = pd.to_datetime(swath_gdfs["AcquisitionOfSignalLocal"])
     if archive:
         archive_path = Path(swath_dir).parent.joinpath(Path(swath_dir).name)
         shutil.make_archive(archive_path, 'zip', swath_dir)

@@ -47,7 +47,7 @@ def unique_product_hotspots(
         None if no nearest hotspots are present.
         The output file path if nearest hotspots are present.
     """
-        
+
     unique_products = [p for p in all_hotspots_gdf["satellite_sensor_product"].unique()]
     nearest_hotspots_dfs = []
     gdf_a = all_hotspots_gdf[
@@ -168,16 +168,15 @@ def process_nearest_points(
             driver="GeoJSON"
         )
     
-    
-    _LOG.info(f"Processing subset between {start_time} and {end_time} solar day")
-    hotspots_gdf = hotspots_gdf.between_time(start_time, end_time)
-    unique_hours = hotspots_gdf['solar_day'].dt.hour.unique()
-    _LOG.info(f"Unique solar hours in temporal subset hotspots: {unique_hours}")
-    
+    start_time_utc, end_time_utc = util.convert_solar_time_to_utc(lon_east, lon_west, start_time, end_time)    
+    _LOG.info(f"Processing subset between {start_time_utc} and {end_time_utc} utc time")    
+    hotspots_gdf = hotspots_gdf.set_index("datetime", drop=False)
+    hotspots_gdf = hotspots_gdf.between_time(start_time_utc, end_time_utc)
+    print(hotspots_gdf.head())
     _LOG.info(f"Processing Neareast Hotspots...")
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
-
+    
     swath_directory = Path(outdir).joinpath(
         f"swaths_{int(lon_east)}_{int(lon_west)}_{solar_start_dt.strftime('%Y%m%d')}_{solar_end_dt.strftime('%Y%m%d')}"
     )
@@ -215,16 +214,11 @@ def process_nearest_points(
             delete=True
         )
         swath_gdf.to_pickle(swath_pkl_file)
-    if test:
-        _LOG.info(f"Saving swath GeoDataFrame to GeoJSON file {swath_pkl_file.with_suffix('.geojson').as_posix()}")
-        swath_gdf.to_file(swath_pkl_file.with_suffix(".geojson"),
-            driver="GeoJSON"
-        )
-    
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()
     ]
+   
     all_product_tasks = []
     for product_a in unique_products:
         outfile = Path(outdir).joinpath(f"nearest_points_{product_a}_{start_time.replace(':','')}_{end_time.replace(':','')}.csv")
@@ -235,171 +229,6 @@ def process_nearest_points(
                 " Same file will be used in analysis."
             )
             continue
-        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_gdf, outfile, start_time, end_time, test=test))
+        all_product_tasks.append(dask.delayed(unique_product_hotspots)(product_a, hotspots_gdf, compare_field, swath_gdf, outfile, start_time_utc, end_time_utc, test=test))
     outfiles = [fid for fid in dask.compute(*all_product_tasks) if fid is not None]
     return outfiles
-    
-
-@click.command(
-    "process-nearest-hotspots", help="Processing of the nearest hotspots."
-)
-@click.option(
-    "--nasa_frp",
-    type=click.STRING,
-    help="NASA FRP geojson file path.",
-    default="s3://s3vtaustralia/nasa_hotspots_gdf.geojson",
-    show_default=True,
-)
-@click.option(
-    "--esa-frp",
-    type=click.STRING,
-    help="ESA FRP geojson file path",
-    default="s3://s3vtaustralia/s3vt_hotspots.geojson",
-    show_default=True,
-)
-@click.option(
-    "--eumetsat-frp",
-    type=click.STRING,
-    help="EUMETSAT FRP geojson file path",
-    default="s3://s3vtaustralia/s3vt_eumetsat_hotspots.geojson",
-    show_default=True,
-)
-@click.option(
-    "--landgate-frp",
-    type=click.STRING,
-    help="LANDGATE FRP geojson file path",
-    default="s3://s3vtaustralia/landgate_hotspots_gdf.geojson",
-    show_default=True,
-)
-@click.option(
-    "--dea-frp",
-    type=click.STRING,
-    help="DEA FRP geojson file path",
-    default=None,
-    show_default=True,
-)
-@click.option(
-    "--lon-west",
-    type=click.FLOAT,
-    help="western longitude to form bounding box",
-    default=147.0,
-    show_default=True,
-)
-@click.option(
-    "--lon-east",
-    type=click.FLOAT,
-    help="eastern longitude to form bounding box",
-    default=154.0,
-    show_default=True,
-)
-@click.option(
-    "--lat-south",
-    type=click.FLOAT,
-    help="southern latitude to form bounding box",
-    default=-38.0,
-    show_default=True,
-)
-@click.option(
-    "--lat-north",
-    type=click.FLOAT,
-    help="northern latitude to form bounding box",
-    default=-27.0,
-    show_default=True,
-)
-@click.option(
-    "--start-date",
-    type=click.STRING,
-    help="start date to form temporal subset [YYYY-MM-DD]",
-    default="2019-11-01",
-    show_default=True,
-)
-@click.option(
-    "--end-date",
-    type=click.STRING,
-    help="end date to form temporal subset [YYYY-MM-DD]",
-    default="2020-10-08",
-    show_default=True,
-)
-@click.option(
-    "--start-time",
-    type=click.STRING,
-    help="start-time to form temporal subset [HH:MM]",
-    default="21:00",
-    show_default=True,
-)
-@click.option(
-    "--end-time",
-    type=click.STRING,
-    help="end-time to form temporal subset [HH:MM]",
-    default="03:00",
-    show_default=True,
-)
-@click.option(
-    "--outdir",
-    type=click.STRING,
-    help="The working directory where all the output files will be saved.",
-    default=Path(os.getcwd()).joinpath("workdir").as_posix(),
-    show_default=True,
-)
-@click.option(
-    "--chunks",
-    type=click.INT,
-    help="Number of chunks to block geojson files used in multi-processing.",
-    default=100,
-    show_default=True,
-)
-@click.option(
-    "--compare-field",
-    type=click.STRING,
-    help="The column used in finding the nearest hotspots.",
-    default="solar_day",
-    show_default=True,
-)
-def main(
-    nasa_frp: click.STRING,
-    esa_frp: click.STRING,
-    eumetsat_frp: click.STRING,
-    landgate_frp: click.STRING,
-    dea_frp: click.STRING,
-    lon_west: float,
-    lat_south: float,
-    lon_east: float,
-    lat_north: float,
-    start_date: str,
-    end_date: str,
-    start_time: str,
-    end_time: str,
-    chunks: Optional[int] = 100,
-    outdir: Optional[Union[Path, str]] = Path(os.getcwd()),
-    compare_field: Optional[str] = "solar_day",
-    
-) -> List:
-    
-    processing_parameters = {
-        "nasa_frp": nasa_frp,
-        "esa_frp": esa_frp,
-        "eumetsat_frp": eumetsat_frp,
-        "landgate_frp": landgate_frp,
-        "dea_frp": dea_frp,
-        "lon_west": lon_west,
-        "lat_south": lat_south,
-        "lon_east": lon_east,
-        "lat_north": lat_north,
-        "start_date": start_date,
-        "end_date": end_date,
-        "start_time": start_time,
-        "end_time": end_time,
-        "chunks": chunks,
-        "outdir": outdir,
-        "compare_field": compare_field
-    }
-    
-    return process_nearest_points(**processing_parameters)
-
-    
-if __name__ == "__main__":
-    # Configure log here for now, move it to __init__ at top level once
-    # code is configured to run as module
-    # client = Client(asynchronous=True)
-    main()
-    # client.close()
