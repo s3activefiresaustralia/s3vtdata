@@ -1108,6 +1108,33 @@ def fetch_hotspots_files(
     return hotspots_files
 
 
+def fetch_sentinel3_swath_files(
+    swath_file_path: str,
+    outdir: Union[Path, str]
+) -> Union[Path, str]:
+    """Utility to download hotspots files from s3 location.
+    
+    :param swath_file_path: The full path to sentinel-3 swath file, if in AWS S3
+                            then the s3 pattern must match. Eg. s3://<bucket>/<key>
+    :param outdir: The output directory to store the files downloaded from s3.
+    
+    :returns:
+       The full path to downloaded swath file
+    """
+    if re.match(__s3_pattern__, swath_file_path):
+        aws_session = boto3.Session()
+        s3_client = aws_session.client("s3")
+        _, bucket, _key, _ = re.split(__s3_pattern__, swath_file_path)
+        outfile = Path(outdir).joinpath(Path(swath_file_path).name)
+        if outfile.exists():
+            _LOG.info(f"{Path(swath_file_path).name} exists: skipped download")
+            return outfile
+        _LOG.info(f"downloading {swath_file_path} to {outfile.as_posix()}")
+        s3_client.download_file(bucket, _key, outfile.as_posix())
+    
+    return outfile
+
+
 def process_hotspots_gdf(
     nasa_frp: Optional[Union[Path, str]] = None,
     esa_frp: Optional[Union[Path, str]] = None,

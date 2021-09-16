@@ -88,7 +88,7 @@ def process_nearest_points(
     eumetsat_frp: Union[Path, str],
     landgate_frp: Union[Path, str],
     dea_frp: Union[Path, str],
-    sentinel3_swath_pkl: Union[Path, str],
+    sentinel3_swath_geojson: Union[Path, str],
     lon_west: float,
     lat_south: float,
     lon_east: float,
@@ -115,7 +115,7 @@ def process_nearest_points(
     :param eumetsat_frp: The path to EUMETSAT .geojson file.
     :param landgate_frp: The path to LANDGATE .geojson file.
     :param dea_frp: The path to DEA .geojson file.
-    :param sentinel3_swath_pkl: The full path to Sentine3 swath geodataframe pickle file.
+    :param sentinel3_swath_geojson: The full path to Sentine3 swath geodataframe geojson file.
     :param lon_west: The western longitude of the extent to subset.
     :param lat_south: The southern latitude of the extent to subset.
     :param lon_east: The eastern longitude of the extent to subset.
@@ -173,6 +173,7 @@ def process_nearest_points(
     hotspots_gdf = hotspots_gdf.set_index("datetime", drop=False)
     hotspots_gdf = hotspots_gdf.between_time(start_time_utc, end_time_utc)
     print(hotspots_gdf.head())
+
     _LOG.info(f"Processing Neareast Hotspots...")
     solar_start_dt = hotspots_gdf['solar_day'].min()
     solar_end_dt = hotspots_gdf['solar_day'].max()
@@ -200,12 +201,15 @@ def process_nearest_points(
 
         # Compute swath genration tasks sequentially.
         for swath_task in swath_generation_tasks:
-             swath_task.compute()
+            swath_task.compute()
 
         # _ = dask.compute(*swath_generation_tasks)
             # Create concatenated swath GeoDataFrame from the daily swath geometry.
         _LOG.info("Generating satellite swath concatenated GeoDataFrame..")
-        s3_swath_gdf = pd.read_pickle(sentinel3_swath_pkl)
+        
+        sentinel3_swath_geojson = util.fetch_sentinel3_swath_files(sentinel3_swath_geojson, outdir)
+        s3_swath_gdf = gpd.read_file(sentinel3_swath_geojson)
+        print(s3_swath_gdf.head())
         s3_swath_gdf = s3_swath_gdf[(s3_swath_gdf['AcquisitionOfSignalUTC'] >= start_date) & (s3_swath_gdf['AcquisitionOfSignalUTC'] <= end_date)]
         swath_gdf = util.concat_swath_gdf(
             swath_directory,
@@ -214,6 +218,7 @@ def process_nearest_points(
             delete=True
         )
         swath_gdf.to_pickle(swath_pkl_file)
+    
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
         p for p in hotspots_gdf["satellite_sensor_product"].unique()

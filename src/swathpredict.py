@@ -29,7 +29,6 @@ import simplekml
 import folium
 from folium import plugins
 from colour import Color
-import uuid
 
 parser.add_argument('--configuration', dest='configuration', default='config.yaml',help='ground station configuration')
 parser.add_argument('--start', dest='start', help='start time YYYY-MM-DDTHH:MM:SSZ format')
@@ -47,27 +46,27 @@ def tleiscurrent(tlefile, satname, targetdate, acceptabletimedelta=None):
     # scenarios
     # time precedes launch date
     # time delta exceeds threshold
-    
+
     # tlefile is json format retrieved by updatetlefile() written using pandas to_json method
     # satname is NORAD compatible satellite name eg. TERRA
     # targetdate is pd.timestamp requested swathpredict date - could be a date range??
     # acceptabletimedelta is timedelta64
-    
+
     if acceptabletimedelta is None:
         acceptabletimedelta = timedelta(days = 30)
-        
+
     df = pandas.read_json('tle.json')
     df['EPOCH'] = pandas.to_datetime(df['EPOCH'])
-    
+
     #dt = pd.Timestamp(str(targetdate))
-    
+
     df = df[df['TLE_LINE0'].str.contains(satellite)]
     tle = df.iloc[(abs(df.EPOCH-targetdate)).argsort()[:1]]
     delta = tle['EPOCH'] - targetdate
     result = delta < acceptabletimedelta
-    
+
     return(tle, delta, result)
-    
+
 def updatetlefile(norad_sat_ids,user, password, mindatetime=None, maxdatetime=None ):
     """
     Return updated TLE as JSON
@@ -75,13 +74,13 @@ def updatetlefile(norad_sat_ids,user, password, mindatetime=None, maxdatetime=No
     # norad_sat_ids as tuple of norad identifiers (12134,12121,23243,)
     # mindatetime as pandas timestamp
     # maxdatetime as pandas timestamp
-    
+
     if mindatetime is None:
         d = date(1970, 1, 1)
         mindatetime = pandas.Timestamp(str(d))
     if maxdatetime is None:
         maxdatetime = pandas.Timestamp(datetime.now())       
-    
+
     with SpaceTrackApi(login=user, password=password) as api:
 
         #convert mindatetime and maxdatetime to YYYY-MM-DD format
@@ -93,9 +92,9 @@ def updatetlefile(norad_sat_ids,user, password, mindatetime=None, maxdatetime=No
                            predicate=('EPOCH', 'NORAD_CAT_ID', 'TLE_LINE0', 'TLE_LINE1', 'TLE_LINE2',))
         df = pandas.DataFrame(tle_list)
         df.to_json('tle.json')
-    
+
     return(df)
-    
+
 def getredtoblack(number):
     """
     Return a list of colours for a give number of samples
@@ -104,31 +103,31 @@ def getredtoblack(number):
         numbercolours = 256
     else:
         numbercolours = number
-        
+
     rangevalue = int((numbercolours)/4)
-    
+
     if number == 1:
         return(['red'])
     if number == 2:
         return(['red', 'black'])
-    
+
     red = Color("red")
     orange = Color("orange")
     yellow = Color("yellow")
     white = Color("white")
     black = Color("black")
-    
+
     redorange = tuple(red.range_to(orange, rangevalue))
     orangeyellow = tuple(orange.range_to(yellow, rangevalue+1))
     yellowwhite = tuple(yellow.range_to(white,rangevalue+1))
     whiteblack = tuple(white.range_to(black,rangevalue+1))
     redtoblack = redorange + orangeyellow[1:] + yellowwhite[1:] + whiteblack[1:]
-    
+
     redtoblacklist = list(redtoblack)
     colours = []
     position = 0
     increment = int(len(redtoblacklist)/(number-1))
-    
+
     while (position < len(redtoblacklist)):
 
         colours.append(redtoblacklist[position])
@@ -230,7 +229,7 @@ def update_points_crossing_antimeridian(listofpoints):
     antimeridianlistofpoints = []
     diff = 325.0
     referencepointlon = listofpoints[0]['lon2']
-    
+
     crossingeasttowest = False
     for point in listofpoints:
         # Confirm no crossing of antimeridian between points
@@ -253,7 +252,7 @@ def update_points_crossing_antimeridian(listofpoints):
     if crossingeasttowest == True:
         for point in antimeridianlistofpoints:
             point['lon2'] = point['lon2']+360
-        
+
     return(antimeridianlistofpoints)
 
 
@@ -274,7 +273,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
     ogr.UseExceptions()
 
     driver = ogr.GetDriverByName(ogr_format)
-    
+
     if os.path.exists(ogr_output):
         driver.DeleteDataSource(ogr_output)
     ds = driver.CreateDataSource(ogr_output)
@@ -342,7 +341,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
     feature.SetField('Node                         :', attributes['Node'])
 
 
-    
+
     if poly_or_line == 'point':
         point = ogr.Geometry(ogr.wkbPoint)
         for x in input_points:
@@ -352,15 +351,15 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         layer.CreateFeature(feature)
 
         point.Destroy()
-    
-    
-    
+
+
+
     if poly_or_line == 'line':
         line = ogr.Geometry(type=ogr.wkbLineString)
         for x in input_points:
-      
-            
-           
+
+
+
             line.AddPoint(x['lon2'], x['lat2'], x['alt2'])
 
         feature.SetGeometry(line)
@@ -369,20 +368,20 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         line.Destroy()
 
     if poly_or_line == 'polygon':
-        
+
         ring = ogr.Geometry(ogr.wkbLinearRing)
-        
+
         #input_points = update_points_crossing_antimeridian(input_points, ogr_format, 'antimeridian.geojson')
         for x in input_points:
-   
+
             ring.AddPoint(x['lon2'], x['lat2'])
-                        
+
         poly = ogr.Geometry(ogr.wkbPolygon)
         ring.color = "red"
-        
+
         poly.AddGeometry(ring)
-        
-        
+
+
         feature.SetGeometry(poly)
 
         layer.CreateFeature(feature)
@@ -391,7 +390,7 @@ def get_vector_file(attributes, input_points, poly_or_line, ogr_output, ogr_form
         poly.Destroy()
 
     feature.Destroy()
-   
+
     ds.Destroy()
     # for KML - Add altitude to GeoJSON if ogr_format=="GeoJSON" and change colour of track to yellow
     if ogr_format == "GeoJSON":
@@ -467,13 +466,13 @@ def folium_timespan_geojson_html(schedule, satname):
     lines=[]
     polygons = []
     #polygontuples = ()
-    
+
     colorindex = 0
-    
+
     colorlut = getredtoblack(len(schedule)+1)
 
     for i in schedule:
-        
+
         pointlist = []
         polygonlist = []
         #timeslist = []
@@ -481,23 +480,23 @@ def folium_timespan_geojson_html(schedule, satname):
         for x in i['Orbit line']: 
             pointlist.append([x['lon2'], x['lat2']])
             datelist.append(str(x['time']).replace(" ","T"))
-            
+
             # folium expects a time for each point - could use iterate for len of points and time period to get times per point - or add to dict from original function which uses time
         lines.append({'coordinates': pointlist, 'dates': datelist, 'color': str(colorlut[colorindex]),'weight': 2})
-        
+
         datelist = []  
-            
+
         for x in i['Swath polygon']:
             #polygonlist.append([x['lat2'],x['lon2']])
             pointtuple = (x['lon2'],x['lat2'])
             polygonlist.append(pointtuple)
-            
+
             datelist.append(str(x['time']).replace(" ","T"))
-        
+
         polygons.append({'coordinates': [(tuple(polygonlist),)], 'dates': datelist, 'color': str(colorlut[colorindex]),'weight': 2})
         colorindex = colorindex +1
-    
-    
+
+
     features = [
         {
             'type': 'Feature',
@@ -511,16 +510,16 @@ def folium_timespan_geojson_html(schedule, satname):
                     'color': polygon['color'],
                     'opacity': 0.1,
                     'weight': polygon['weight'] if 'weight' in polygon else 5
-                    
+
                 }
             }
         }
-        
+
         #for line in lines
         for polygon in polygons 
     ]
-    
-    
+
+
     featureslines = [
         {
             'type': 'Feature',
@@ -534,40 +533,39 @@ def folium_timespan_geojson_html(schedule, satname):
                     'color': line['color'],
                     'dash-array': '[4]',
                     'weight': line['weight'] if 'weight' in line else 5
-                
+
                 }
             }
         }
-        
+
         for line in lines
         #for polygon in polygons 
     ]
-    
-    
-    
+
+
+
     for featureline in featureslines:
         features.append(featureline)
-    
-    
+
+
     plugins.TimestampedGeoJson({
         'type': 'FeatureCollection',
         'features': features,
     }, period='PT1M', duration=None,add_last_point=False, auto_play=True, transition_time=1, time_slider_drag_update=True).add_to(timespan_map)
-    
+
     plugins.Fullscreen(
         position='topright',
         title='Expand me',
         title_cancel='Exit me',
         force_separate_button=True
     ).add_to(timespan_map)
-    
+
     timespan_map
 
 
 
 
     '''
-
     colorindex = 0
     for i in schedule:
         
@@ -635,7 +633,6 @@ def folium_timespan_geojson_html(schedule, satname):
         'type': 'FeatureCollection',
         'features': features,
     }, style_function=style_function)
-
     #gj.add_child(folium.GeoJsonTooltip(fields=["Satellite               :", "Sensor               :", \
     #                                           "Orbit height                 :", "Orbit number                 :", \
     #                                           "Acquisition of Signal Local    :", "Acquisition of Signal UTC    :", \
@@ -683,10 +680,10 @@ def to_datetime(ephemtime):
     """Return datetime object from input ephem time"""
     try:
         stringtime = (datetime.strptime(str(ephemtime), "%Y/%m/%d %H:%M:%S"))
-    
+
     except ValueError:
         stringtime = (datetime.strptime(str(ephemtime), "%Y-%m-%d %H:%M:%S"))
-    
+
     return (stringtime)
 
 
@@ -732,37 +729,33 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
     print("---------------------------------------")
 
-    
+
     '''
     for tle in tles:
         
         if tle[0] == satellite_name:
-
             # Update satellite names for use in filename
             satname = get_satellite_name(tle)
             sat = ephem.readtle(tle[0], tle[1], tle[2])
-
             # Report currency of TLE
             twole = tlefile.read(tle[0], 'tles.txt')
             now = datetime.utcnow()
             timesinceepoch = now - twole.epoch.astype(datetime)
-
             print("TLE EPOCH:", twole.epoch.astype(datetime))
             print("TLE age:", timesinceepoch)
             print("---------------------------------------")
-
             # While lostime of next pass is less than or equal to pass_begin_time + period do something
     
     Indented below 2 tabs
     
     '''
     lostime = start  # passes_begin_time + passes_period
-    
-    
+
+
     while lostime <= (passes_begin_time + timedelta(minutes=passes_period)):
-        tlestxt = uuid.uuid1().hex
+
         # get TLE for satellite
-        
+
         df = tledf[tledf['TLE_LINE0'].str.contains(satellite_name)]
 
         lostle = df.iloc[(abs(df.EPOCH-pandas.Timestamp(str(lostime)))).argsort()[:1]]
@@ -770,19 +763,19 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
         tle[0] = lostle['TLE_LINE0'].values[0][2:]
         tle[1] = lostle['TLE_LINE1'].values[0]
         tle[2] = lostle['TLE_LINE2'].values[0]
-        
-       
-        with open(tlestxt, 'w') as f:
+
+
+        with open('tles.txt', 'w') as f:
             for i in tle:
                 f.write(tle[i])
                 f.write('\n')
-        
-        
+
+
         satname = get_satellite_name(tle)
         sat = ephem.readtle(tle[0], tle[1], tle[2])
-        
+
         # Report currency of TLE
-        twole = tlefile.read(tle[0], tlestxt)
+        twole = tlefile.read(tle[0], 'tles.txt')
         now = datetime.utcnow()
         timesinceepoch = now - twole.epoch.astype(datetime)
 
@@ -797,9 +790,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
 
         oi = float(tle[2][9:16])      
-        
-        orb = Orbital(tle[0], tlestxt, tle[1], tle[2])
-        os.remove(tlestxt)
+
+        orb = Orbital(tle[0], "tles.txt", tle[1], tle[2])
+
         rt, ra, tt, ta, st, sa = observer.next_pass(sat)
 
         # Confirm that observer details have been computed i.e. are not 'Null'
@@ -866,25 +859,25 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
             #    subsatlat1 = sat.sublat.real * (180 / math.pi)
             #    subsatlon1 = sat.sublong.real * (180 / math.pi)
             #    print("got to here")
-            
+
             sat.compute(deltatime)
-            
+
             subsatlat = sat.sublat.real * (180 / math.pi)
             subsatlon = sat.sublong.real * (180 / math.pi)
-            
+
             orbaltitude = orb.get_lonlatalt(to_datetime(rt))[2] * 1000
 
             geotrack.append(
                 {'lat2': subsatlat, 'lon2': subsatlon,
                  'alt2': orbaltitude, 'time': str(deltatime)})
-            
+
             # Original heading calculation
             #effectiveheading = get_effective_heading(sat, oi, subsatlat,
             #                                       subsatlon, orad, sat._n)
 
             # TODO Alternate simple heading
             subsatlat1, subsatlon1 = get_subsat_oneincrement(sat, deltatime, timestep)
-            
+
             effectiveheading = Geodesic.WGS84.Inverse(subsatlat1, subsatlon1, subsatlat, subsatlon)['azi1']
 
             eastaz = effectiveheading + 90
@@ -905,11 +898,11 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
             if startpoint is True:
                 # Step from sub satellite point to limb of swath with increasing step size
                 while math.pow(incrementtoswath, 5) < swath:
-                    
+
                     geoeastpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, math.pow(incrementtoswath, 5))
                     geoeastpointdict['time']=str(deltatime)
                     geoeastpoint.append(geoeastpointdict)
-                    
+
                     geowestpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, math.pow(incrementtoswath, 5))
                     geowestpointdict['time']=str(deltatime)
                     geowestpoint.append(geowestpointdict)
@@ -919,9 +912,9 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
             geoeastpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, swath)
             geoeastpointdict['time']=str(deltatime)
             geoeastpoint.append(geoeastpointdict)
-            
+
             # Trace the western limb of the swath
-            
+
             geowestpointdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, swath)
             geowestpointdict['time']=str(deltatime)
             geowestpoint.append(geowestpointdict)
@@ -937,17 +930,17 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
         incrementtoswath = swathincrement
 
         while math.pow(incrementtoswath, 5) < swath:
-            
+
             geodesiceastazdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, eastaz, math.pow(incrementtoswath, 5))
             geodesiceastazdict['time']=str(deltatime)
             geoloseastpoint.append(geodesiceastazdict)
-            
+
             geodesicwestazdict = Geodesic.WGS84.Direct(subsatlat, subsatlon, westaz, math.pow(incrementtoswath, 5))
             geodesicwestazdict['time']=str(deltatime)
             geoloswestpoint.append(geodesicwestazdict)
 
             incrementtoswath = incrementtoswath + 1
-            
+
         # Append reversed geoloswestpoint to geoloseastpoint
         reversedwest = []
         for x in reversed(geoloswestpoint):
@@ -1036,7 +1029,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
     # render the html schedule and write to file
     attributeshtml = []
-    
+
     for acquisition in schedule:
         attributeshtml.append('<td>' + acquisition['Satellite name'] + '</td>'\
         '<td><a href="' + str(os.path.relpath(acquisition['Swath filename'],os.path.dirname(foliumhtml)))+ '">' + str(acquisition['Sensor code']) + '</a></td>'\
@@ -1060,7 +1053,7 @@ def get_upcoming_passes(satellite_name, passes_begin_time, passes_period):
 
 
 if __name__ == '__main__':
-    
+
     logging.basicConfig(level=logging.INFO)
     # Configure Jinja for HTML templating
     path_to_templates = Path(__file__).resolve()
@@ -1068,8 +1061,8 @@ if __name__ == '__main__':
     file_loader = FileSystemLoader(path_to_templates.as_posix())
     env = Environment(loader=file_loader)
     template = env.get_template("template.html")
-    
-    
+
+
 
     # Get configurations
     satellites = []
@@ -1087,13 +1080,13 @@ if __name__ == '__main__':
             # TODO build logic to handle requests for time ranges > + 1 mont
     else:
         start = datetime.strptime(args.start, "%Y-%m-%dT%H:%M:%SZ")
-        
+
     # Gather all norad ids and put into tuple
     norad_satellite_ids = []
     stale_age = timedelta(days = int(cfg['scenario']['stale_age']))
     for satellite in cfg['missions']: norad_satellite_ids.append(satellite['satellite']['norad'])
     norad_satellite_ids = tuple(norad_satellite_ids)
-    
+
     stale_test = []
     # Check if 'tle.json exists else fetch
     if not os.path.exists('tle.json'):
@@ -1102,9 +1095,9 @@ if __name__ == '__main__':
     else:
         for satellite in satellites:
             tle, delta, result = tleiscurrent('tle.json', satellite, pandas.to_datetime(start), stale_age)
-            
+
             stale_test.append(result.values[0])
-        
+
         if False in stale_test:
             logging.info('TLE is stale, fetching ...')
             tledf = pandas.read_json('tle.json')
@@ -1117,13 +1110,13 @@ if __name__ == '__main__':
         tledf = pandas.read_json('tle.json')
     tledf['EPOCH'] = pandas.to_datetime(tledf['EPOCH'])        
     # At this point we have a pandas df containing all available TLEs for all satellites that aren't stale.        
-            
-    
+
+
     if not args.period:
         period = cfg['scenario']['period']
     else:
         period = int(args.period)
-        
+
     ground_station = cfg['scenario']['ground_station']  # ('-23 42', '133 54')  # Alice Spring Data Acquisition Facility
     ground_station_latitude, ground_station_longitude = ground_station
     map_centre_lat = ground_station_latitude.split()[0]+"."+str(int((float(ground_station_latitude.split()[1])/60)*100))
@@ -1132,28 +1125,28 @@ if __name__ == '__main__':
     ground_station_name = cfg['scenario']['ground_station_name']
     observer_horizon = cfg['scenario']['observer-horizon']
     timestep = timedelta(seconds=cfg['scenario']['timestep'])
-    
-    
+
+
     if not args.output_path:
         output_path = os.path.relpath(cfg['outputs']['output_path'], os.getcwd())
     else:
         output_path = args.output_path
-    
+
     schedule_url_basename = cfg['outputs']['schedule_url_basename']
-    
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
         print("OUTPUT PATH DOESN'T EXIST", output_path)
 
     # Loop through satellite list and execute until end of period
-    
+
     # while 1: do this without stopping - comment out to do once - new scenario could be run once each 24hr period, then only update satellite positions each minute
     for i in satellites:
-        
+
         # Determine time range
         # Get representative month
         print(start.month, (start+timedelta(minutes=1440)).month)
-        
+
         for satellite in cfg['missions']:
             # Set up folium map
             #style_function = lambda x: {'fillColor': '#000000' if x['type'] == 'Polygon' else '#00ff00'}
@@ -1165,8 +1158,6 @@ if __name__ == '__main__':
                 sensor = satellite['satellite']['sensor']['name']
                 orbitoffset = satellite['satellite']['addtoorbit']
         logging.info("Get upcoming passes for " + i)
-        
+
         logging.info(str([i, start, period]))
         get_upcoming_passes(i, start, period)
-
-

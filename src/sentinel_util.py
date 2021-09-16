@@ -102,7 +102,6 @@ def main(outdir: Path):
     swath_gdf = pd.concat(swath_dfs, ignore_index=True)
     swath_gdf.drop_duplicates(subset=['AcquisitionOfSignalUTC'])
     swath_gdf.to_pickle(outdir.joinpath("sentinel3_swath_gdfs.pkl"))
-    print(swath_gdf.count())
     
     
 if __name__ == "__main__":
