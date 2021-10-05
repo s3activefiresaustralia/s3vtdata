@@ -1,4 +1,6 @@
 attr
+package-outlier
+chart_studio
 backcall
 bleach
 boto3
