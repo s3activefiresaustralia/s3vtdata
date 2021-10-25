@@ -656,9 +656,8 @@ def temporal_subset_df(
     """
     # create solar day as a the datetime index
     df = df.set_index(pd.DatetimeIndex(df.solar_day.values))
-        
     if (start_date is not None) & (end_date is not None):
-        df = df.loc[start_date:end_date]
+        df = df.sort_index().loc[start_date:end_date]
 
     return df
 
