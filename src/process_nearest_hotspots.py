@@ -209,7 +209,6 @@ def process_nearest_points(
         
         sentinel3_swath_geojson = util.fetch_sentinel3_swath_files(sentinel3_swath_geojson, outdir)
         s3_swath_gdf = gpd.read_file(sentinel3_swath_geojson)
-        print(s3_swath_gdf.head())
         s3_swath_gdf = s3_swath_gdf[(s3_swath_gdf['AcquisitionOfSignalUTC'] >= start_date) & (s3_swath_gdf['AcquisitionOfSignalUTC'] <= end_date)]
         swath_gdf = util.concat_swath_gdf(
             swath_directory,
@@ -218,6 +217,9 @@ def process_nearest_points(
             delete=True
         )
         swath_gdf.to_pickle(swath_pkl_file)
+    
+    _LOG.info("Subsetting only valid swath geometry...")
+    swath_gdf = swath_gdf[swath_gdf['geometry'].is_valid == True]
     
     _LOG.info(f"Generating neareast hotspots...")
     unique_products = [
