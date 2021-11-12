@@ -199,7 +199,6 @@ def get_s3_listings(
 
 
 def remove_duplicates(df, time_diff_threshold: Optional[int] = 1800):
-
     df_new = []
     for _, row_m in df.iterrows():
         sub = df[(df['longitude'] == row_m.longitude) & (df['latitude'] == row_m.latitude)]
@@ -219,7 +218,9 @@ def remove_duplicates(df, time_diff_threshold: Optional[int] = 1800):
         else:
             df_new.append(sub)
     if len(df_new) >= 1:
-        return pd.concat(df_new, ignore_index=True)
+        df_new = pd.concat(df_new, ignore_index=True)
+        df_new.drop_duplicates(inplace=True)
+        return df_new
     return None
 
 
@@ -261,12 +262,6 @@ def clean_gdf(gdf, nprocs: Optional[int]  = 1, time_diff_threshold: Optional[int
     gdf['satellite'] = (gdf['satellite'].replace(['SNPP'],'SUOMI NPP'))
     gdf.drop(['ID', 'Descriptio', 'Orbit', 'Time', 'Date', 'SatZenith', 'Location'], axis=1, inplace=True)
 
-    unique_satellites = gdf.satellite.unique()
-    print(unique_satellites)
-    
-    for sat in unique_satellites:
-        remove_duplicates(gdf[gdf['satellite'] == sat], time_diff_threshold)
-        sys.exit()
     with Pool(processes=nprocs) as pool:
         gdfs = pool.starmap(
             remove_duplicates,
@@ -275,7 +270,7 @@ def clean_gdf(gdf, nprocs: Optional[int]  = 1, time_diff_threshold: Optional[int
                     gdf[gdf['satellite'] == sat],
                     time_diff_threshold,
                 )
-                for sat in unique_satellites
+                for sat in gdf.satellite.unique()
             ]
         )
     
@@ -327,14 +322,57 @@ def get_landgate_geojson(
     return clean_gdf(hotspots_gdf, nprocs=nprocs)
     
 
-@click.command("--process-landgate-fhs",help="Processes Landgates FHS into combined GeoDataFrame/Geojson file")
-@click.option("--start-date", help="The start date to subset the FHS record",type=click.DateTime(formats=['%Y-%m-%d']), required=True)
-@click.option("--end-date", help="The end date to subset the FHS record",type=click.DateTime(formats=['%Y-%m-%d']), required=True)
-@click.option("--fhs-prefix", help="The folder relative to S3 Bucket where FHS data", type=click.Tuple([str, str, str]), default=["data/MOD/FHS", "data/AVH/FHS", "data/VII/FHS"], show_default=True)
-@click.option("--fhs-exclude", help="The matched string will be excluded", type=click.Tuple([str, str, str]), default=["MOD14", None, "NFHS"], show_default=True)
-@click.option("--fhs-suffix", help="only files with matched suffix will be processed", type=click.STRING, default=".zip", show_default=True)
-@click.option("--s3-bucket", help="Name of S3 bucket where FHS files are located", type=click.STRING, default="srss-data", show_default=True)
-@click.option("--nprocs", help="Number of processor used in multi-processing", type=click.INT, default=1, show_default=True)
+@click.command(
+    "--process-landgate-fhs",
+    help="Processes Landgates FHS into combined GeoDataFrame/Geojson file"
+)
+@click.option(
+    "--start-date",
+    help="The start date to subset the FHS record",
+    type=click.DateTime(formats=['%Y-%m-%d']),
+    required=True
+)
+@click.option(
+    "--end-date",
+    help="The end date to subset the FHS record",
+    type=click.DateTime(formats=['%Y-%m-%d']),
+    required=True
+)
+@click.option(
+    "--fhs-prefix",
+    help="The folder relative to S3 Bucket where FHS data",
+    type=click.Tuple([str, str, str]),
+    default=["data/MOD/FHS", "data/AVH/FHS", "data/VII/FHS"],
+    show_default=True
+)
+@click.option(
+    "--fhs-exclude",
+    help="The matched string will be excluded",
+    type=click.Tuple([str, str, str]),
+    default=["MOD14", None, "NFHS"],
+    show_default=True
+)
+@click.option(
+    "--fhs-suffix",
+    help="only files with matched suffix will be processed",
+    type=click.STRING,
+    default=".zip",
+    show_default=True
+)
+@click.option(
+    "--s3-bucket",
+    help="Name of S3 bucket where FHS files are located",
+    type=click.STRING,
+    default="srss-data",
+    show_default=True
+)
+@click.option(
+    "--nprocs",
+    help="Number of processor used in multi-processing",
+    type=click.INT,
+    default=1,
+    show_default=True
+)
 def main(
     start_date,
     end_date,
@@ -344,8 +382,6 @@ def main(
     s3_bucket,
     nprocs
 ):
-    # start_dt = datetime.datetime.strptime(f"{start_date}", "%Y-%m-%dT%H:%M:%S")
-    # end_dt = datetime.datetime.strptime(f"{end_date}T23:59:59", "%Y-%m-%dT%H:%M:%S")
     print(start_date)
     print(end_date)
     gdf_hotspots = get_landgate_geojson(
@@ -360,7 +396,7 @@ def main(
     )
     gdf_hotspots = gdf_hotspots[gdf_hotspots['satellite'] != 'NOAA-23']
     gdf_hotspots['satellite_sensor_product'] = gdf_hotspots['satellite']+'_'+gdf_hotspots['sensor']+'_LANDGATE'
-    gdf_hotspots.to_file('landgate_hotspots_gdf_v1.geojson', driver='GeoJSON')
+    gdf_hotspots.to_file('landgate_hotspots_gdf_v2.geojson', driver='GeoJSON')
     
 
 if __name__ == "__main__":
