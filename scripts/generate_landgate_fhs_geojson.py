@@ -201,7 +201,10 @@ def get_s3_listings(
 def remove_duplicates(df, time_diff_threshold: Optional[int] = 1800):
     df_new = []
     for _, row_m in df.iterrows():
-        sub = df[(df['longitude'] == row_m.longitude) & (df['latitude'] == row_m.latitude)]
+        start_subset_time = row_m.datetime - timedelta(days=1)
+        end_subset_time = row_m.datetime + timedelta(days=1)
+        df_subset = df[(df['datetime'] >= start_subset_time) & (df['datetime'] <= end_subset_time)]
+        sub = df_subset[(df_subset['longitude'] == row_m.longitude) & (df_subset['latitude'] == row_m.latitude)]
         sub = sub.sort_values(by=['datetime'])
         if len(sub) > 1:
             num_rows = 0
@@ -210,7 +213,7 @@ def remove_duplicates(df, time_diff_threshold: Optional[int] = 1800):
                     df_new.append(sub[sub.index == idx])
                     num_rows += 1
                     continue
-                if num_rows < len(sub) - 1:
+                if num_rows < len(sub):
                     time_diff = abs((sub.iloc[num_rows-1].datetime - sub.iloc[num_rows].datetime).total_seconds())
                     if time_diff > time_diff_threshold:
                         df_new.append(sub[sub.index == idx])
@@ -284,7 +287,8 @@ def get_landgate_geojson(
     fhs_exclude: Optional[List] = ["MOD14", None, "NFHS"],
     fhs_suffix: Optional[str] = ".zip",
     s3_bucket: Optional[str] = "srss-data",
-    nprocs: Optional[str] = 8
+    nprocs: Optional[str] = 8,
+    time_diff_threshold: Optional[int] = 1800
 ):
     aws_session = boto3.Session(
         region_name="ap-southeast-2",
@@ -319,7 +323,7 @@ def get_landgate_geojson(
     
     hotspots_gdf = pd.concat([gdf for gdf in gdfs if len(gdf) > 1], ignore_index=True)
     # print(hotspots_gdf)
-    return clean_gdf(hotspots_gdf, nprocs=nprocs)
+    return clean_gdf(hotspots_gdf, nprocs=nprocs, time_diff_threshold=time_diff_threshold)
     
 
 @click.command(
@@ -373,6 +377,13 @@ def get_landgate_geojson(
     default=1,
     show_default=True
 )
+@click.option(
+    "--time-threshold",
+    help="Time difference (in seconds) to treat FHS as duplicates.",
+    type=click.INT,
+    default=1800,
+    show_default=True
+)
 def main(
     start_date,
     end_date,
@@ -380,7 +391,8 @@ def main(
     fhs_exclude,
     fhs_suffix,
     s3_bucket,
-    nprocs
+    nprocs,
+    time_threshold
 ):
     print(start_date)
     print(end_date)
@@ -391,12 +403,13 @@ def main(
         fhs_exclude=fhs_exclude,
         fhs_suffix=fhs_suffix,
         s3_bucket=s3_bucket,
-        nprocs=nprocs
+        nprocs=nprocs,
+        time_diff_threshold=time_threshold,
 
     )
     gdf_hotspots = gdf_hotspots[gdf_hotspots['satellite'] != 'NOAA-23']
     gdf_hotspots['satellite_sensor_product'] = gdf_hotspots['satellite']+'_'+gdf_hotspots['sensor']+'_LANDGATE'
-    gdf_hotspots.to_file('landgate_hotspots_gdf_v2.geojson', driver='GeoJSON')
+    gdf_hotspots.to_file('landgate_hotspots_gdf_cleaned_v1.geojson', driver='GeoJSON')
     
 
 if __name__ == "__main__":
